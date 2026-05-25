@@ -19,6 +19,7 @@
             <h1 class="app-title">场景机会与能力匹配</h1>
         </div>
         <div class="topbar-right">
+            <button id="btn-config" class="icon-btn" title="匹配参数设置">⚙</button>
             <button id="btn-ability-mode" class="toggle-btn active">
                 📋 能力 → 机会
             </button>
@@ -67,6 +68,88 @@
         </section>
 
     </main>
+
+    <!-- ================================================================ -->
+    <!-- 配置参数模态框（⚙ 参数设置）                                  -->
+    <!-- ================================================================ -->
+    <div id="config-overlay" class="config-overlay" style="display:none;">
+        <div class="config-modal">
+            <div class="config-modal-header">
+                <span class="config-modal-title">⚙ 匹配参数设置</span>
+                <button id="config-close-x" class="config-close-x" title="关闭">&times;</button>
+            </div>
+
+            <div class="config-modal-body">
+                <!-- 权重调整策略切换 -->
+                <div class="config-section">
+                    <div class="config-label">权重调整策略</div>
+                    <div class="strategy-switch" id="strategy-switch">
+                        <button class="strategy-btn active" data-strategy="free">策略1：自由调整（保存时自动缩放至100%）</button>
+                        <button class="strategy-btn" data-strategy="linked">策略2：联动调整（改一自动等比例缩放其他）</button>
+                    </div>
+                    <div class="config-hint" id="strategy-hint">当前：自由调整，保存时若权重之和≠100% 将自动等比例缩放。</div>
+                </div>
+
+                <!-- 领域权重 -->
+                <div class="config-section">
+                    <div class="config-label">
+                        领域权重（domain_weight）
+                        <span class="config-value-display" id="dw-display">60%</span>
+                    </div>
+                    <input type="range" id="slider-domain-weight"
+                           class="config-slider" min="0" max="100" value="60"
+                           step="1">
+                    <div class="slider-labels"><span>0%</span><span>50%</span><span>100%</span></div>
+                </div>
+
+                <!-- 文本权重 -->
+                <div class="config-section">
+                    <div class="config-label">
+                        文本权重（text_weight）
+                        <span class="config-value-display" id="tw-display">40%</span>
+                    </div>
+                    <input type="range" id="slider-text-weight"
+                           class="config-slider" min="0" max="100" value="40"
+                           step="1">
+                    <div class="slider-labels"><span>0%</span><span>50%</span><span>100%</span></div>
+                </div>
+
+                <!-- 权重和提示 -->
+                <div class="config-weight-sum" id="weight-sum-bar">
+                    <span>权重合计：</span>
+                    <span class="weight-sum-val" id="weight-sum-val">100%</span>
+                    <span class="weight-sum-status" id="weight-sum-status">✓ 正常</span>
+                </div>
+
+                <!-- 返回条数 TopN -->
+                <div class="config-section">
+                    <div class="config-label">返回匹配条数（top_n）</div>
+                    <div class="config-input-row">
+                        <input type="range" id="slider-top-n" class="config-slider config-slider-short" min="1" max="20" value="3" step="1">
+                        <input type="number" id="input-top-n" class="config-number-input" min="1" max="20" value="3">
+                    </div>
+                </div>
+
+                <!-- 文本截取长度 -->
+                <div class="config-section">
+                    <div class="config-label">文本截取长度（text_max_length）</div>
+                    <div class="config-input-row">
+                        <input type="range" id="slider-text-len" class="config-slider config-slider-short" min="50" max="2000" value="300" step="10">
+                        <input type="number" id="input-text-len" class="config-number-input" min="50" max="2000" value="300" step="10">
+                    </div>
+                    <div class="config-hint">文本匹配时截取前 N 个中文字符，避免超长文本稀释相似度。</div>
+                </div>
+            </div>
+
+            <div class="config-modal-footer">
+                <button id="btn-config-reset" class="config-btn config-btn-secondary">恢复默认</button>
+                <div class="config-footer-right">
+                    <button id="btn-config-cancel" class="config-btn config-btn-cancel">取消</button>
+                    <button id="btn-config-save" class="config-btn config-btn-primary">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- ================================================================ -->
     <!-- JS 模块引用（按依赖顺序加载）                                    -->

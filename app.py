@@ -294,9 +294,25 @@ def api_config():
                 return jsonify({'error': 'top_n 必须 >= 1'}), 400
 
             if 'text_max_length' in body and not isinstance(body['text_max_length'], int):
-                return jsonify({'error': 'text_max_length 必须是整数'}), 400
+                    return jsonify({'error': 'text_max_length 必须是整数'}), 400
             if 'text_max_length' in body and body['text_max_length'] < 50:
                 return jsonify({'error': 'text_max_length 必须 >= 50'}), 400
+
+            # ---- 权重自动缩放（兜底）：若 domain_weight + text_weight ！= 1 则等比例缩放 ----
+            if 'domain_weight' in body and 'text_weight' in body:
+                dw = float(body['domain_weight'])
+                tw = float(body['text_weight'])
+                s  = dw + tw
+                if s > 0.001 and abs(s - 1.0) > 0.001:
+                    factor = 1.0 / s
+                    body['domain_weight'] = round(dw * factor, 4)
+                    body['text_weight']   = round(tw * factor, 4)
+                    print(f'[config] 权重已自动缩放至和为1：domain={body["domain_weight"]}, text={body["text_weight"]}')
+            elif 'domain_weight' in body and 'text_weight' not in body:
+                # 只更新了 domain_weight，保持 text_weight = 1 - domain_weight
+                body['text_weight'] = round(1.0 - float(body['domain_weight']), 4)
+            elif 'text_weight' in body and 'domain_weight' not in body:
+                body['domain_weight'] = round(1.0 - float(body['text_weight']), 4)
 
             new_config = update_config(body)
             print(f'[config] 参数已更新: {new_config}')

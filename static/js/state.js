@@ -10,6 +10,16 @@ const State = (function () {
     'use strict';
 
     // ====================================================================
+    // 默认配置常量（与后端 engine.py 中的 MATCH_CONFIG 保持一致）
+    // ====================================================================
+    const DEFAULT_CONFIG = {
+        domain_weight:   0.6,
+        text_weight:     0.4,
+        top_n:           3,
+        text_max_length: 300,
+    };
+
+    // ====================================================================
     // 内部状态变量
     // ====================================================================
 
@@ -18,6 +28,7 @@ const State = (function () {
     let _abilities      = [];              // 全部场景能力列表（缓存）
     let _opportunities  = [];              // 全部场景机会列表（缓存）
     let _config         = null;            // 当前匹配参数配置（从后端 /api/config 获取或匹配结果携带）
+    let _configBackup   = null;            // 配置备份（用于「取消」时恢复）
 
     // ====================================================================
     // 公开接口
@@ -91,6 +102,27 @@ const State = (function () {
             if (_selectedId == null) return null;
             const list = this.getCurrentList();
             return list.find(item => item.id === _selectedId) || null;
+        },
+
+        /**
+         * 获取默认配置副本（调用方放心修改，不影响常量）。
+         */
+        getDefaultConfig() {
+            return JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+        },
+
+        /**
+         * 获取配置备份（用于「取消」时恢复）。
+         */
+        getConfigBackup() {
+            return _configBackup;
+        },
+
+        /**
+         * 设置配置备份（打开配置面板时调用，保存当前快照）。
+         */
+        setConfigBackup(cfg) {
+            _configBackup = cfg ? JSON.parse(JSON.stringify(cfg)) : null;
         }
     };
 })();

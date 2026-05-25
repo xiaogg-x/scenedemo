@@ -137,8 +137,72 @@ function switchMode(mode) {
 
 
 // ============================================================================
+// 配置面板事件绑定
+// ============================================================================
+
+/**
+ * 绑定配置按钮、模态框、保存/取消/恢复默认 的全部事件。
+ * 在页面初始化时调用一次。
+ */
+function bindConfigEvents() {
+    // 打开配置面板
+    const btnConfig = document.getElementById('btn-config');
+    if (btnConfig) {
+        btnConfig.addEventListener('click', () => {
+            if (window.openConfigModal) window.openConfigModal();
+        });
+    }
+
+    // 关闭按钮（右上角 ×）
+    const btnCloseX = document.getElementById('config-close-x');
+    if (btnCloseX) {
+        btnCloseX.addEventListener('click', () => {
+            if (window.closeConfigModal) window.closeConfigModal();
+        });
+    }
+
+    // 点击遮罩层关闭（仅点击 overlay 本身时触发）
+    const overlay = document.getElementById('config-overlay');
+    if (overlay) {
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                if (window.closeConfigModal) window.closeConfigModal();
+            }
+        });
+    }
+
+    // 保存
+    const btnSave = document.getElementById('btn-config-save');
+    if (btnSave) {
+        btnSave.addEventListener('click', async () => {
+            if (window.saveConfig) await window.saveConfig();
+        });
+    }
+
+    // 取消
+    const btnCancel = document.getElementById('btn-config-cancel');
+    if (btnCancel) {
+        btnCancel.addEventListener('click', () => {
+            if (window.cancelConfig) window.cancelConfig();
+        });
+    }
+
+    // 恢复默认
+    const btnReset = document.getElementById('btn-config-reset');
+    if (btnReset) {
+        btnReset.addEventListener('click', () => {
+            if (window.resetConfig) window.resetConfig();
+        });
+    }
+}
+
+
+// ============================================================================
 // 启动
 // ============================================================================
 
 // 页面加载完成后自动初始化
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', () => {
+    init();
+    bindConfigEvents();
+});
