@@ -9,6 +9,7 @@ _test*.py
 _test*.txt
 _t.txt
 后台数据/*.txt
+后台数据/*.xlsx
 ~$*
 
 # IDE 和工具
