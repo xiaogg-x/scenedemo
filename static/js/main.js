@@ -1,11 +1,13 @@
 /**
- * main.js —— 主流程编排与事件绑定
+ * main.js —— 主流程编排与事件绑定 (v2)
  *
  * 职责：
- *  1. 页面初始化：加载数据、渲染初始界面
+ *  1. 页面初始化：加载数据、加载配置、渲染初始界面
  *  2. 事件监听：列表点击、模式切换按钮
  *  3. 流程编排：协调 state / api / render 三个模块完成交互
+ *  v2 新增：匹配完成后缓存 config 到全局状态
  */
+
 
 // ============================================================================
 // 页面初始化
@@ -13,15 +15,19 @@
 
 async function init() {
     try {
-        // 并行加载两边的数据
-        const [abilities, opportunities] = await Promise.all([
+        // 并行加载数据和配置
+        const [abilities, opportunities, config] = await Promise.all([
             fetchAbilities(),
             fetchOpportunities(),
+            fetchConfig().catch(() => null),  // 配置加载失败不阻塞页面
         ]);
 
         // 存入全局状态
         State.setAbilities(abilities);
         State.setOpportunities(opportunities);
+        if (config) {
+            State.setConfig(config);
+        }
 
         // 渲染初始列表（默认能力模式）
         renderList();
@@ -65,18 +71,23 @@ document.getElementById('item-list').addEventListener('click', async (e) => {
     try {
         let result;
         if (mode === 'ability') {
-            // 能力模式：请求能力→机会的匹配
             result = await fetchMatchForAbility(id);
         } else {
-            // 机会模式：请求机会→能力的匹配
             result = await fetchMatchForOpportunity(id);
         }
-        // 渲染匹配结果卡片
+
+        // v2: 缓存匹配结果中携带的 config 到全局状态
+        if (result && result.config) {
+            State.setConfig(result.config);
+        }
+
+        // 渲染匹配结果卡片（v2：含详细明细）
         renderCards(result);
     } catch (err) {
         console.error('[onClick] 匹配请求失败:', err);
         document.getElementById('match-cards').innerHTML =
             '<div class="cards-empty">匹配请求失败，请重试</div>';
+        renderConfigPanel(null);
     }
 });
 

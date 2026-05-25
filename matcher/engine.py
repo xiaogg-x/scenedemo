@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-engine.py —— 匹配引擎模块
+engine.py —— 匹配引擎模块（v2：返回详细匹配明细）
 
 职责：
   实现场景能力与场景机会之间的双向匹配评分与排序。
+  每条匹配结果携带完整的评分明细，方便前端展示和参数调优。
 
 核心算法：
-  total_score = domain_score × 0.6 + text_score × 0.4
+  total_score = domain_score × DOMAIN_WEIGHT + text_score × TEXT_WEIGHT
 
   domain_score（领域得分）：在"欢迎合作方向"文本中检索能力领域关键词
     - 精确命中（子串匹配） → 1.0
@@ -17,8 +18,10 @@ engine.py —— 匹配引擎模块
     - 提取两个文本的 bigram 字符集 → 计算交集/并集比值
 
 API：
-  match_ability_to_opportunities(ability, opportunities) → list[dict] (Top3)
-  match_opportunity_to_abilities(opp, abilities)       → list[dict] (Top3)
+  match_ability_to_opportunities(ability, opportunities) → list[dict] (Top N)
+  match_opportunity_to_abilities(opp, abilities)             → list[dict] (Top N)
+  get_config() → dict  (返回当前匹配参数)
+  update_config(new_config) → dict  (更新匹配参数)
 """
 
 import re
@@ -26,11 +29,43 @@ from .normalizer import normalize_domain
 
 
 # ============================================================================
-# 权重配置
+# 匹配参数配置（集中管理，供前端 /api/config 读写）
 # ============================================================================
-DOMAIN_WEIGHT = 0.6   # 领域匹配权重
-TEXT_WEIGHT   = 0.4   # 文本相似度权重
-TOP_N         = 3     # 返回前 N 条最佳匹配
+# 修改这些值会影响所有后续匹配计算
+# 前端可通过 POST /api/config 动态更新
+# ============================================================================
+MATCH_CONFIG = {
+    'domain_weight':   0.6,    # 领域匹配权重（0~1，与 text_weight 之和应为 1）
+    'text_weight':     0.4,    # 文本相似度权重（0~1，与 domain_weight 之和应为 1）
+    'top_n':           3,      # 返回前 N 条最佳匹配
+    'text_max_length': 300,    # 文本匹配时截取的最大汉字数（避免超长文本稀释相似度）
+}
+
+
+def get_config():
+    """
+    返回当前匹配参数配置的副本（防止外部意外修改内部引用）。
+
+    返回:
+        dict: 包含 domain_weight, text_weight, top_n, text_max_length
+    """
+    return dict(MATCH_CONFIG)
+
+
+def update_config(new_config):
+    """
+    更新匹配参数配置。只会更新传入的键，其他键保持不变。
+
+    参数:
+        new_config (dict): 需要更新的参数字典，如 {"domain_weight": 0.7}
+
+    返回:
+        dict: 更新后的完整配置
+    """
+    for key in ('domain_weight', 'text_weight', 'top_n', 'text_max_length'):
+        if key in new_config:
+            MATCH_CONFIG[key] = new_config[key]
+    return dict(MATCH_CONFIG)
 
 
 # ============================================================================
@@ -49,7 +84,7 @@ def _clean_text(text):
     """
     if not text:
         return ''
-    # 用正则保留 Unicode 中文范围 \\u4e00-\\u9fff
+    # 用正则保留 Unicode 中文范围 \u4e00-\u9fff
     return re.sub(r'[^\u4e00-\u9fff]', '', text)
 
 
@@ -97,12 +132,12 @@ def _jaccard_similarity(set_a, set_b):
 
 
 # ============================================================================
-# 核心评分函数
+# 核心评分函数（v2：返回 (score, detail)）
 # ============================================================================
 
 def compute_domain_score(ability_domain, opp_welcome):
     """
-    计算领域匹配得分（0.0 / 0.5 / 1.0）。
+    计算领域匹配得分，同时返回匹配详情文本。
 
     策略:
       1. 先尝试精确子串匹配：能力的领域关键词是否直接出现在"欢迎合作方向"文本中
@@ -113,129 +148,199 @@ def compute_domain_score(ability_domain, opp_welcome):
         opp_welcome     (str): 场景机会的"欢迎合作方向"
 
     返回:
-        float: 1.0（精确命中）、0.5（大类近似）、0.0（无关）
+        tuple[float, str]:
+            - score  (float): 1.0 / 0.5 / 0.0
+            - detail (str):   人类可读的匹配过程描述
     """
     if not ability_domain or not opp_welcome:
-        return 0.0
+        return 0.0, '无有效领域信息可供匹配（一侧字段为空）'
 
     # ---- 策略1：精确子串匹配 ----
-    # 在"欢迎合作方向"中直接搜索能力的领域关键词（完整字符串）
     if ability_domain in opp_welcome:
-        return 1.0
+        # 提取匹配位置周围的上下文（前后各取最多 20 个字符）
+        idx = opp_welcome.find(ability_domain)
+        start = max(0, idx - 20)
+        end   = min(len(opp_welcome), idx + len(ability_domain) + 20)
+        context = opp_welcome[start:end].replace('\n', ' ').replace('\r', '')
+        return 1.0, (
+            f'精确命中（得分：1.0）\n'
+            f'能力领域：「{ability_domain}」\n'
+            f'在机会「欢迎合作方向」字段中直接出现\n'
+            f'匹配位置上下文：「…{context}…」'
+        )
 
     # ---- 策略2：大类归一化匹配 ----
-    # 将能力领域映射到大类（如"人工智能（软件）"→"人工智能"）
     big_cls_a = normalize_domain(ability_domain)
 
-    # 在"欢迎合作方向"中提取所有可能的领域关键词组合（滑动窗口切词）
-    # 取前 60 个字符作为检索范围（欢迎合作方向的领域标注通常在最前面）
+    # 取欢迎合作方向前 60 个字符作为检索范围（领域标注通常在最前面）
     prefix = opp_welcome[:60] if len(opp_welcome) > 60 else opp_welcome
 
-    # 检查前缀中是否有任何词归一化后与能力大类相同
+    # 滑动窗口检查前缀中是否有词归一化后与能力大类相同
     for i in range(len(prefix)):
         for j in range(i + 2, min(i + 30, len(prefix) + 1)):
             candidate = prefix[i:j]
-            # 只有当 candidate 是独立的领域词时才比较（避免无意义的短片段）
-            if normalize_domain(candidate) == big_cls_a:
-                return 0.5
-            if normalize_domain(candidate) != candidate:
-                # 已经是归一化命中（candidate在映射表里）
-                if normalize_domain(candidate) == big_cls_a:
-                    return 0.5
+            cand_norm = normalize_domain(candidate)
+            if cand_norm == big_cls_a and cand_norm != candidate:
+                # candidate 在映射表里，且归一化后匹配
+                return 0.5, (
+                    f'大类近似匹配（得分：0.5）\n'
+                    f'能力领域：「{ability_domain}」归一化为大类「{big_cls_a}」\n'
+                    f'在机会「欢迎合作方向」前60字中找到同大类词「{candidate}」\n'
+                    f'匹配依据：两者归一化后同属于「{big_cls_a}」大类'
+                )
 
-    return 0.0
+    return 0.0, (
+        f'未命中（得分：0.0）\n'
+        f'能力领域：「{ability_domain}」→ 大类「{big_cls_a}」\n'
+        f'在机会「欢迎合作方向」前60字中未找到匹配的领域词'
+    )
 
 
 def compute_text_score(text_a, text_b):
     """
-    计算两段文本的中文 2-gram Jaccard 相似度。
+    计算两段文本的中文 2-gram Jaccard 相似度，同时返回重叠详情。
 
     过程:
       1. 清洗文本（去除非中文字符）
-      2. 截取前 300 个有效汉字（控制计算量，避免超长文本稀释相似度）
+      2. 截取前 N 个有效汉字（N 由 MATCH_CONFIG['text_max_length'] 控制）
       3. 分别提取 bigram 集合
       4. 计算 Jaccard 相似度
+      5. 收集重叠的 bigram 列表
 
     参数:
         text_a (str): 能力侧文本（能力概述 + 意向对接客户）
         text_b (str): 机会侧文本（应用场景概述 + 欢迎合作方向）
 
     返回:
-        float: 0.0 ~ 1.0 之间的相似度值
+        tuple[float, dict]:
+            - score  (float): 0.0 ~ 1.0 Jaccard 相似度
+            - detail (dict):  {
+                'overlapping_bigrams': [str, ...],   # 重叠 bigram 列表（按字母序，最多15个）
+                'overlap_count':       int,          # 重叠 bigram 数量
+                'a_bigram_count':      int,          # 文本A的 bigram 总数
+                'b_bigram_count':      int,          # 文本B的 bigram 总数
+                'union_count':         int,          # 并集大小
+                'text_a_snippet':      str,          # 文本A前50字摘要
+                'text_b_snippet':      str,          # 文本B前50字摘要
+              }
     """
+    max_len = MATCH_CONFIG['text_max_length']
+
     # Step 1: 清洗，只保留中文字符
     clean_a = _clean_text(text_a)
     clean_b = _clean_text(text_b)
 
-    # Step 2: 截取前 300 个汉字，避免长文本稀释相似度
-    clean_a = clean_a[:300]
-    clean_b = clean_b[:300]
+    # Step 2: 截取前 max_len 个汉字，避免长文本稀释相似度
+    clean_a = clean_a[:max_len]
+    clean_b = clean_b[:max_len]
 
     # Step 3: 提取 bigram 集合
     bigrams_a = _extract_bigrams(clean_a)
     bigrams_b = _extract_bigrams(clean_b)
 
     # Step 4: 计算 Jaccard 相似度
-    return _jaccard_similarity(bigrams_a, bigrams_b)
+    score = _jaccard_similarity(bigrams_a, bigrams_b)
+
+    # Step 5: 收集重叠 bigram（按字母序，最多15个用于前端展示）
+    overlapping = bigrams_a & bigrams_b
+    overlap_list = sorted(overlapping)[:15] if overlapping else []
+
+    # 文本摘要（用于前端展示理解匹配文本内容）
+    snippet_a = clean_a[:50] + ('...' if len(clean_a) > 50 else '')
+    snippet_b = clean_b[:50] + ('...' if len(clean_b) > 50 else '')
+
+    detail = {
+        'overlapping_bigrams': overlap_list,
+        'overlap_count':       len(overlapping),
+        'a_bigram_count':      len(bigrams_a),
+        'b_bigram_count':      len(bigrams_b),
+        'union_count':         len(bigrams_a | bigrams_b),
+        'text_a_snippet':      snippet_a,
+        'text_b_snippet':      snippet_b,
+    }
+    return score, detail
 
 
 # ============================================================================
-# 匹配入口函数
+# 匹配入口函数（v2：返回详细匹配明细）
 # ============================================================================
 
 def match_ability_to_opportunities(ability, opportunities):
     """
     为一条场景能力匹配 Top N 条场景机会。
 
+    每条匹配结果携带：
+      - target:              匹配到的场景机会数据
+      - domain_score:        领域得分 (0.0/0.5/1.0)
+      - text_score:          文本重叠度得分 (0~1)
+      - total_score:         综合得分
+      - domain_match_detail: 领域匹配过程描述（字符串）
+      - text_match_detail:   文本匹配详情（dict，含重叠 bigram）
+      - match_fields:        参与匹配的字段名及取值对照
+
     参数:
         ability       (dict): 单条场景能力数据
         opportunities (list[dict]): 全部场景机会列表
 
     返回:
-        list[dict]: 按总分降序排列的前 N 条匹配结果，每条包含：
-            - target       (dict): 匹配到的场景机会完整数据
-            - domain_score (float): 领域得分
-            - text_score   (float): 文本重叠度得分
-            - total_score  (float): 综合得分
+        list[dict]: 按总分降序排列的前 N 条匹配结果
     """
-    # 构造能力侧的合本文本（用于文本相似度计算）
-    ability_text = ability.get('overview', '') + ' ' + ability.get('target_customer', '')
+    ability_text   = ability.get('overview', '') + ' ' + ability.get('target_customer', '')
     ability_domain = ability.get('domain', '')
 
-    results = []  # 存放所有候选机会的评分结果
+    # 要参与 match_fields 展示的能力侧字段
+    ability_fields = {
+        '产品名称':   ability.get('name', ''),
+        '所属产业领域': ability.get('domain', ''),
+        '能力概述':   ability.get('overview', ''),
+        '意向对接客户': ability.get('target_customer', ''),
+    }
+
+    results = []
 
     for opp in opportunities:
-        # ---- 计算领域得分（权重60%） ----
-        # 能力的"所属产业领域" vs 机会的"欢迎合作方向"
-        domain_score = compute_domain_score(ability_domain, opp.get('welcome', ''))
+        opp_welcome = opp.get('welcome', '')
 
-        # ---- 计算文本得分（权重40%） ----
-        # 能力侧：能力概述 + 意向对接客户
-        # 机会侧：应用场景概述 + 欢迎合作方向
-        opp_text = opp.get('overview', '') + ' ' + opp.get('welcome', '')
-        text_score = compute_text_score(ability_text, opp_text)
+        # ---- 计算领域得分 + 详情 ----
+        domain_score, domain_detail = compute_domain_score(ability_domain, opp_welcome)
+
+        # ---- 计算文本得分 + 详情 ----
+        opp_text = opp.get('overview', '') + ' ' + opp_welcome
+        text_score, text_detail = compute_text_score(ability_text, opp_text)
 
         # ---- 综合评分 ----
-        total_score = domain_score * DOMAIN_WEIGHT + text_score * TEXT_WEIGHT
+        total_score = domain_score * MATCH_CONFIG['domain_weight'] + text_score * MATCH_CONFIG['text_weight']
+
+        # ---- 要展示的机会侧字段对照 ----
+        opp_fields = {
+            '应用场景项目名称': opp.get('name', ''),
+            '应用场景所属领域': opp.get('domain', ''),
+            '应用场景概述':   opp.get('overview', ''),
+            '欢迎合作方向':   opp_welcome,
+        }
 
         results.append({
-            'target':       opp,
-            'domain_score': round(domain_score, 4),
-            'text_score':   round(text_score, 4),
-            'total_score':  round(total_score, 4),
+            'target':              opp,
+            'domain_score':         round(domain_score, 4),
+            'text_score':           round(text_score, 4),
+            'total_score':          round(total_score, 4),
+            'domain_match_detail':  domain_detail,
+            'text_match_detail':    text_detail,
+            'source_fields':        ability_fields,
+            'target_fields':        opp_fields,
         })
 
-    # ---- 按总分降序排列，取前 TOP_N ----
+    # 按总分降序排列，取前 TOP_N
     results.sort(key=lambda x: x['total_score'], reverse=True)
-    return results[:TOP_N]
+    return results[:MATCH_CONFIG['top_n']]
 
 
 def match_opportunity_to_abilities(opp, abilities):
     """
-    为一条场景机会匹配 Top N 条场景能力。
+    为一条场景机会匹配 Top N 条场景能力（反向匹配）。
 
     与 match_ability_to_opportunities 逻辑对称：
-      - 领域得分：用机会的"应用场景所属领域"检索能力的"意向对接客户"
+      - 领域得分：优先用机会的"欢迎合作方向"前缀匹配能力的领域
       - 文本得分：同样的 bigram Jaccard，交换锚点
 
     参数:
@@ -243,46 +348,64 @@ def match_opportunity_to_abilities(opp, abilities):
         abilities (list[dict]): 全部场景能力列表
 
     返回:
-        list[dict]: 按总分降序排列的前 N 条匹配结果，结构同上
+        list[dict]: 按总分降序排列的前 N 条匹配结果（结构同上）
     """
-    # 构造机会侧的合本文本
-    opp_text = opp.get('overview', '') + ' ' + opp.get('welcome', '')
-
-    # ---- 反向领域匹配策略 ----
-    # 机会的 "欢迎合作方向" 字段通常以领域关键词开头（如"人工智能（软件）：..."）
-    # 提取"欢迎合作方向"的前缀作为领域关键词，用于检索能力的"意向对接客户"
-    # 同时保留原始 "应用场景所属领域" 作为兜底
+    opp_text    = opp.get('overview', '') + ' ' + opp.get('welcome', '')
     opp_welcome = opp.get('welcome', '')
     opp_domain_raw = opp.get('domain', '')
+
+    # 机会侧要展示的字段
+    opp_fields = {
+        '应用场景项目名称': opp.get('name', ''),
+        '应用场景所属领域': opp.get('domain', ''),
+        '应用场景概述':   opp.get('overview', ''),
+        '欢迎合作方向':   opp_welcome,
+    }
 
     results = []
 
     for ability in abilities:
-        # 优先用"欢迎合作方向"开头的领域词去匹配能力的"意向对接客户"
-        domain_score = compute_domain_score(
-            ability.get('domain', ''),  # 能力的领域
-            opp_welcome                  # 机会的"欢迎合作方向"
+        # ---- 领域得分 ----
+        # 优先用"欢迎合作方向"匹配能力的领域（机会侧欢迎合作方向前缀 = 能力领域）
+        domain_score, domain_detail = compute_domain_score(
+            ability.get('domain', ''),
+            opp_welcome
         )
         # 如果得分为0，再用机会的原始领域字段做兜底匹配
         if domain_score == 0 and opp_domain_raw:
-            domain_score = compute_domain_score(
+            domain_score2, domain_detail2 = compute_domain_score(
                 opp_domain_raw,
                 ability.get('target_customer', '')
             )
+            if domain_score2 > 0:
+                domain_score = domain_score2
+                domain_detail = domain_detail2
 
-        # ---- 文本得分（同样的 bigram Jaccard） ----
+        # ---- 文本得分 ----
         ability_text = ability.get('overview', '') + ' ' + ability.get('target_customer', '')
-        text_score = compute_text_score(opp_text, ability_text)
+        text_score, text_detail = compute_text_score(opp_text, ability_text)
 
         # ---- 综合评分 ----
-        total_score = domain_score * DOMAIN_WEIGHT + text_score * TEXT_WEIGHT
+        total_score = domain_score * MATCH_CONFIG['domain_weight'] + text_score * MATCH_CONFIG['text_weight']
+
+        # 能力侧字段对照
+        ability_fields = {
+            '产品名称':   ability.get('name', ''),
+            '所属产业领域': ability.get('domain', ''),
+            '能力概述':   ability.get('overview', ''),
+            '意向对接客户': ability.get('target_customer', ''),
+        }
 
         results.append({
-            'target':       ability,
-            'domain_score': round(domain_score, 4),
-            'text_score':   round(text_score, 4),
-            'total_score':  round(total_score, 4),
+            'target':              ability,
+            'domain_score':         round(domain_score, 4),
+            'text_score':           round(text_score, 4),
+            'total_score':          round(total_score, 4),
+            'domain_match_detail':  domain_detail,
+            'text_match_detail':    text_detail,
+            'source_fields':        opp_fields,
+            'target_fields':        ability_fields,
         })
 
     results.sort(key=lambda x: x['total_score'], reverse=True)
-    return results[:TOP_N]
+    return results[:MATCH_CONFIG['top_n']]

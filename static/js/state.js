@@ -1,7 +1,8 @@
 /**
- * state.js —— 全局状态管理模块
+ * state.js —— 全局状态管理模块 (v2)
  *
  * 职责：维护前端页面的全部运行时状态，对外暴露 getter/setter 接口。
+ * v2 新增：当前匹配参数配置（config）状态。
  * 所有 DOM 渲染函数和事件处理函数都通过 state.js 读取/更新状态。
  */
 
@@ -12,10 +13,11 @@ const State = (function () {
     // 内部状态变量
     // ====================================================================
 
-    let _currentMode = 'ability';      // 当前模式：'ability'（能力→机会） 或 'opportunity'（机会→能力）
-    let _selectedId = null;            // 当前选中项的 ID
-    let _abilities   = [];             // 全部场景能力列表（缓存）
-    let _opportunities = [];           // 全部场景机会列表（缓存）
+    let _currentMode    = 'ability';      // 当前模式：'ability'（能力→机会） 或 'opportunity'（机会→能力）
+    let _selectedId     = null;            // 当前选中项的 ID
+    let _abilities      = [];              // 全部场景能力列表（缓存）
+    let _opportunities  = [];              // 全部场景机会列表（缓存）
+    let _config         = null;            // 当前匹配参数配置（从后端 /api/config 获取或匹配结果携带）
 
     // ====================================================================
     // 公开接口
@@ -60,6 +62,16 @@ const State = (function () {
         /** 设置场景机会列表 */
         setOpportunities(list) {
             _opportunities = list;
+        },
+
+        /** 获取当前匹配参数配置 */
+        getConfig() {
+            return _config;
+        },
+
+        /** 设置当前匹配参数配置 */
+        setConfig(config) {
+            _config = config;
         },
 
         /**

@@ -66,3 +66,39 @@ async function fetchMatchForOpportunity(oppId) {
     if (!res.ok) throw new Error(`匹配请求失败: ${res.status}`);
     return await res.json();
 }
+
+
+/**
+ * 获取当前匹配参数配置。
+ *
+ * 返回格式：
+ *   {domain_weight, text_weight, top_n, text_max_length}
+ */
+async function fetchConfig() {
+    const res = await fetch(`${BASE_URL}/api/config`);
+    if (!res.ok) throw new Error(`获取配置失败: ${res.status}`);
+    return await res.json();
+}
+
+
+/**
+ * 更新匹配参数配置。
+ *
+ * 参数:
+ *   newConfig (object): 要更新的配置字段，如 {domain_weight: 0.7}
+ *
+ * 返回格式：
+ *   {domain_weight, text_weight, top_n, text_max_length}  // 更新后的完整配置
+ */
+async function updateConfigAPI(newConfig) {
+    const res = await fetch(`${BASE_URL}/api/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newConfig),
+    });
+    if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || `更新配置失败: ${res.status}`);
+    }
+    return await res.json();
+}

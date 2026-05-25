@@ -8,7 +8,12 @@ matcher 包 —— 场景机会与场景能力匹配核心模块
 
 from .data_loader import load_abilities, load_opportunities
 from .normalizer import normalize_domain
-from .engine import match_ability_to_opportunities, match_opportunity_to_abilities
+from .engine import (
+    match_ability_to_opportunities,
+    match_opportunity_to_abilities,
+    get_config,
+    update_config,
+)
 
 __all__ = [
     'load_abilities',
@@ -16,4 +21,6 @@ __all__ = [
     'normalize_domain',
     'match_ability_to_opportunities',
     'match_opportunity_to_abilities',
+    'get_config',
+    'update_config',
 ]

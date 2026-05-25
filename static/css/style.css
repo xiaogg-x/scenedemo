@@ -518,6 +518,201 @@ body {
     to { transform: rotate(360deg); }
 }
 
+
+/* ============================================================================
+ * v2 新增：参数配置面板
+ * ============================================================================
+ */
+.config-panel {
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--color-border);
+    background: #F0F9FF;
+}
+.config-panel-inner {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 24px;
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    flex-wrap: wrap;
+}
+.config-panel-title {
+    font-weight: 600;
+    color: var(--color-primary);
+    margin-right: 4px;
+    white-space: nowrap;
+}
+.config-item { white-space: nowrap; color: var(--color-text-secondary); }
+.config-item strong { color: var(--color-primary); font-weight: 700; }
+.config-sep { color: var(--color-border); user-select: none; }
+
+
+/* ============================================================================
+ * v2 新增：卡片详细明细
+ * ============================================================================
+ */
+
+/* 改为单列垂直布局 */
+.cards-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding: 0 24px 24px;
+    flex: 1;
+    overflow-y: auto;
+}
+
+/* 卡片分区 */
+.card-section {
+    margin-bottom: 16px;
+    padding-bottom: 14px;
+    border-bottom: 1px dashed var(--color-border);
+}
+.card-section:last-of-type {
+    border-bottom: none;
+    margin-bottom: 12px;
+}
+.card-section-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.section-score {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--color-primary);
+    background: var(--color-primary-soft);
+    padding: 2px 8px;
+    border-radius: var(--radius-sm);
+    white-space: nowrap;
+}
+.section-score-weighted {
+    color: var(--color-success);
+    background: #DCFCE7;
+}
+
+/* 字段对照表 */
+.field-compare {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+.field-row {
+    display: flex;
+    align-items: stretch;
+    border-bottom: 1px solid #F1F5F9;
+}
+.field-row:last-child { border-bottom: none; }
+.field-col {
+    flex: 1;
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.field-col-left { background: #F8FAFF; }
+.field-col-right { background: #FFFDF5; }
+.field-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    flex-shrink: 0;
+    font-size: 14px;
+    color: var(--color-text-muted);
+    background: var(--color-bg);
+}
+.field-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    letter-spacing: 0.5px;
+}
+.field-value {
+    font-size: 12px;
+    color: var(--color-text-primary);
+    line-height: 1.5;
+    word-break: break-all;
+}
+
+/* 领域匹配详情文本 */
+.card-detail-text {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    line-height: 1.8;
+    padding: 10px 14px;
+    background: #F8FAFC;
+    border-radius: var(--radius-md);
+    border-left: 3px solid var(--color-primary-light);
+}
+
+/* 文本匹配统计 */
+.text-stats {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+}
+.text-stat {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+}
+.text-stat-label { color: var(--color-text-muted); font-weight: 500; }
+.text-stat-val { color: var(--color-primary); font-weight: 700; font-size: 13px; }
+.text-stat-hint { color: var(--color-text-muted); font-size: 11px; }
+
+/* 文本摘要 */
+.text-snippets { margin-bottom: 10px; }
+.text-snippet-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    margin-top: 6px;
+    margin-bottom: 2px;
+}
+.text-snippet-val {
+    font-size: 11px;
+    color: var(--color-text-secondary);
+    background: #F1F5F9;
+    padding: 4px 10px;
+    border-radius: var(--radius-sm);
+    font-family: 'Courier New', monospace;
+    line-height: 1.6;
+    word-break: break-all;
+}
+
+/* 重叠 Bigram 关键词标签 */
+.bigram-tags {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+    padding-top: 4px;
+}
+.bigram-tags-label { font-size: 11px; color: var(--color-text-muted); margin-right: 2px; }
+.bigram-tag {
+    display: inline-block;
+    font-size: 11px;
+    color: #065F46;
+    background: #D1FAE5;
+    padding: 2px 8px;
+    border-radius: 50px;
+    font-weight: 500;
+    transition: transform 0.15s ease;
+}
+.bigram-tag:hover { transform: scale(1.1); }
+.bigram-tags-empty { font-size: 11px; color: var(--color-text-muted); font-style: italic; }
+
+
 /* ============================================================================
  * 响应式（移动端降级为单列）
  * ============================================================================
@@ -532,7 +727,7 @@ body {
         max-height: 40vh;
     }
     .cards-grid {
-        grid-template-columns: 1fr;
+        flex-direction: column;
     }
     .topbar {
         flex-wrap: wrap;
@@ -547,6 +742,6 @@ body {
 
 @media (max-width: 1200px) and (min-width: 901px) {
     .cards-grid {
-        grid-template-columns: repeat(2, 1fr);
+        flex-direction: column;
     }
 }
