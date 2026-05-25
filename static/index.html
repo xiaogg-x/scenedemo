@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>场景机会与能力匹配 Demo</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+    <!-- ================================================================ -->
+    <!-- 顶部标题栏                                                       -->
+    <!-- ================================================================ -->
+    <header class="topbar">
+        <div class="topbar-left">
+            <span id="mode-label" class="mode-label">场景能力列表</span>
+        </div>
+        <div class="topbar-center">
+            <h1 class="app-title">场景机会与能力匹配</h1>
+        </div>
+        <div class="topbar-right">
+            <button id="btn-ability-mode" class="toggle-btn active">
+                📋 能力 → 机会
+            </button>
+            <button id="btn-opp-mode" class="toggle-btn">
+                🎯 机会 → 能力
+            </button>
+        </div>
+    </header>
+
+    <!-- ================================================================ -->
+    <!-- 主体双栏布局                                                     -->
+    <!-- ================================================================ -->
+    <main class="main-content">
+
+        <!-- ---------- 左侧列表区 ---------- -->
+        <aside class="left-panel">
+            <div class="panel-header">
+                <span class="panel-icon">📂</span>
+                <span class="panel-title">数据列表</span>
+            </div>
+            <div id="item-list" class="scroll-list">
+                <!-- JS 动态渲染 -->
+            </div>
+            <div id="list-count" class="panel-footer">共 0 条</div>
+        </aside>
+
+        <!-- ---------- 右侧卡片区 ---------- -->
+        <section class="right-panel">
+            <!-- 选中源信息 -->
+            <div class="source-info" id="source-info" style="display:none;">
+                <span class="source-indicator">已选中</span>
+                <span id="source-title" class="source-name"></span>
+                <span id="source-sub" class="source-meta"></span>
+            </div>
+
+            <div class="cards-header">
+                <span class="panel-icon">🔍</span>
+                <span class="panel-title">匹配结果</span>
+            </div>
+            <div id="match-cards" class="cards-grid">
+                <!-- JS 动态渲染 -->
+            </div>
+        </section>
+
+    </main>
+
+    <!-- ================================================================ -->
+    <!-- JS 模块引用（按依赖顺序加载）                                    -->
+    <!-- ================================================================ -->
+    <script src="/js/state.js"></script>
+    <script src="/js/api.js"></script>
+    <script src="/js/render.js"></script>
+    <script src="/js/main.js"></script>
+
+</body>
+</html>

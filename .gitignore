@@ -1,0 +1,21 @@
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# 临时测试文件
+_test*.py
+_test*.txt
+_t.txt
+后台数据/*.txt
+~$*
+
+# IDE 和工具
+.workbuddy/
+.vscode/
+.idea/
+
+# 系统文件
+Thumbs.db
+Desktop.ini
