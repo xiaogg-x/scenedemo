@@ -398,6 +398,60 @@ let _skipLinkedUpdate = false;
 
 
 /**
+ * 重新拉取当前选中项的匹配结果并渲染。
+ * 如果没有任何选中项则不做任何事。
+ */
+async function _refetchCurrentMatch() {
+    const selectedId = State.getSelectedId();
+    if (selectedId == null) return;
+
+    showLoading();
+
+    try {
+        const mode = State.getMode();
+        let result;
+        if (mode === 'ability') {
+            result = await fetchMatchForAbility(selectedId);
+        } else {
+            result = await fetchMatchForOpportunity(selectedId);
+        }
+
+        if (result && result.config) {
+            State.setConfig(result.config);
+        }
+        renderCards(result);
+    } catch (err) {
+        console.error('[refetchCurrentMatch] 匹配请求失败:', err);
+        document.getElementById('match-cards').innerHTML =
+            '<div class="cards-empty">匹配请求失败，请重试</div>';
+        renderConfigPanel(null);
+    }
+}
+
+
+/**
+ * 比较待保存配置与打开模态框时备份的配置是否有差异。
+ * 返回 true 表示配置确实变了，需要重新加载匹配结果。
+ *
+ * @param {object} newConfig - saveConfig() 构建的新配置
+ * @returns {boolean}
+ */
+function _configHasChanged(newConfig) {
+    const backup = State.getConfigBackup();
+    if (!backup) return true; // 没有备份（异常情况），保守处理：执行刷新
+
+    // 只比较影响匹配结果的四个字段
+    const keys = ['domain_weight', 'text_weight', 'top_n', 'text_max_length'];
+    for (const k of keys) {
+        if (newConfig[k] !== backup[k]) {
+            return true;
+        }
+    }
+    return false;
+}
+
+
+/**
  * 打开配置模态框。
  * 从 State 读取当前配置填入表单，备份配置（供「取消」恢复），
  * 根据当前策略初始化滑块行为。
@@ -478,6 +532,11 @@ async function saveConfig() {
         // 同步更新原始配置面板（卡片区上方）
         renderConfigPanel(saved);
         closeConfigModal();
+
+        // 判断配置是否真的变了，变了才重新加载匹配结果
+        if (_configHasChanged(newConfig)) {
+            await _refetchCurrentMatch();
+        }
     } catch (err) {
         alert('保存失败：' + err.message);
     }

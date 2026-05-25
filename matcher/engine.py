@@ -24,6 +24,8 @@ API：
   update_config(new_config) → dict  (更新匹配参数)
 """
 
+import json
+import os
 import re
 from .normalizer import normalize_domain
 
@@ -41,6 +43,37 @@ MATCH_CONFIG = {
     'text_max_length': 300,    # 文本匹配时截取的最大汉字数（避免超长文本稀释相似度）
 }
 
+# 配置文件路径（与 Excel 数据文件同目录）
+CONFIG_FILE = os.path.normpath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), '..', '后台数据', 'config.json'
+))
+
+
+def save_config_to_file():
+    """将当前 MATCH_CONFIG 持久化写入 config.json，下次启动时自动恢复。"""
+    try:
+        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(MATCH_CONFIG, f, ensure_ascii=False, indent=2)
+        print(f'[config] 配置已保存至 {CONFIG_FILE}')
+    except Exception as e:
+        print(f'[config] 保存配置失败: {e}')
+
+
+def load_config_from_file():
+    """从 config.json 恢复配置（文件不存在时不做任何事）。"""
+    if not os.path.exists(CONFIG_FILE):
+        print('[config] 未找到持久化配置文件，使用默认值')
+        return
+    try:
+        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            for key in MATCH_CONFIG:
+                if key in data:
+                    MATCH_CONFIG[key] = data[key]
+        print(f'[config] 已从 {CONFIG_FILE} 加载配置: {MATCH_CONFIG}')
+    except Exception as e:
+        print(f'[config] 加载配置失败: {e}')
+
 
 def get_config():
     """
@@ -55,6 +88,7 @@ def get_config():
 def update_config(new_config):
     """
     更新匹配参数配置。只会更新传入的键，其他键保持不变。
+    更新后自动持久化到 config.json。
 
     参数:
         new_config (dict): 需要更新的参数字典，如 {"domain_weight": 0.7}
@@ -65,6 +99,7 @@ def update_config(new_config):
     for key in ('domain_weight', 'text_weight', 'top_n', 'text_max_length'):
         if key in new_config:
             MATCH_CONFIG[key] = new_config[key]
+    save_config_to_file()
     return dict(MATCH_CONFIG)
 
 

@@ -13,6 +13,7 @@ from .engine import (
     match_opportunity_to_abilities,
     get_config,
     update_config,
+    load_config_from_file,
 )
 
 __all__ = [
@@ -23,4 +24,5 @@ __all__ = [
     'match_opportunity_to_abilities',
     'get_config',
     'update_config',
+    'load_config_from_file',
 ]

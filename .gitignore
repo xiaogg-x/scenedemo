@@ -17,6 +17,9 @@ _t.txt
 .vscode/
 .idea/
 
+# 运行时配置（本地持久化，不提交）
+后台数据/config.json
+
 # 系统文件
 Thumbs.db
 Desktop.ini

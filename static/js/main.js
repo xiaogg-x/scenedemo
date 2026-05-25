@@ -194,6 +194,17 @@ function bindConfigEvents() {
             if (window.resetConfig) window.resetConfig();
         });
     }
+
+    // 策略切换按钮（事件委托）
+    const strategySwitch = document.getElementById('strategy-switch');
+    if (strategySwitch) {
+        strategySwitch.addEventListener('click', (e) => {
+            const btn = e.target.closest('.strategy-btn');
+            if (!btn) return;
+            const strategy = btn.dataset.strategy;
+            if (window.setConfigStrategy) window.setConfigStrategy(strategy);
+        });
+    }
 }
 
 
