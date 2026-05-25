@@ -593,7 +593,7 @@ function _bindSliderEvents() {
     const st = document.getElementById('slider-text-weight');
     const sn = document.getElementById('slider-top-n');
     const sl = document.getElementById('slider-text-len');
-    const in = document.getElementById('input-top-n');
+    const inputN = document.getElementById('input-top-n');
     const il = document.getElementById('input-text-len');
 
     // ---- 领域权重滑块 ----
@@ -623,13 +623,13 @@ function _bindSliderEvents() {
 
     // ---- TopN 滑块 ↔ 数字框 双向同步 ----
     _onTopNSliderInput = function () {
-        if (in) in.value = this.value;
+        if (inputN) inputN.value = this.value;
     };
     if (sn) sn.addEventListener('input', _onTopNSliderInput);
     _onTopNNumberChange = function () {
         if (sn) sn.value = this.value;
     };
-    if (in) in.addEventListener('change', _onTopNNumberChange);
+    if (inputN) inputN.addEventListener('change', _onTopNNumberChange);
 
     // ---- text_max_length 滑块 ↔ 数字框 双向同步 ----
     _onTextLenSliderInput = function () {
@@ -651,14 +651,14 @@ function _unbindSliderEvents() {
     const st = document.getElementById('slider-text-weight');
     const sn = document.getElementById('slider-top-n');
     const sl = document.getElementById('slider-text-len');
-    const in = document.getElementById('input-top-n');
+    const inputN = document.getElementById('input-top-n');
     const il = document.getElementById('input-text-len');
 
     if (sd && _onDomainSliderInput)  sd.removeEventListener('input', _onDomainSliderInput);
     if (st && _onTextSliderInput)     st.removeEventListener('input', _onTextSliderInput);
     if (sn && _onTopNSliderInput)    sn.removeEventListener('input', _onTopNSliderInput);
     if (sl && _onTextLenSliderInput)  sl.removeEventListener('input', _onTextLenSliderInput);
-    if (in && _onTopNNumberChange)    in.removeEventListener('change', _onTopNNumberChange);
+    if (inputN && _onTopNNumberChange)    inputN.removeEventListener('change', _onTopNNumberChange);
     if (il && _onTextLenNumberChange)  il.removeEventListener('change', _onTextLenNumberChange);
 
     _onDomainSliderInput  = null;
