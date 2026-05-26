@@ -136,7 +136,14 @@ def api_opportunities():
 # ---------------------------------------------------------------------------
 
 def _build_match_response(matches, config, source):
-    """构建匹配结果响应体（v3 格式，含 dimension_scores + v2 兼容字段）。"""
+    """
+    构建匹配结果响应体（v3 格式）。
+
+    响应体同时包含：
+      - v3 结构化字段：dimension_scores（{dim_id: {score, detail, weight}}）
+      - v2 兼容扁平字段：{dim_id}_score, {dim_id}_match_detail
+        这样老前端代码不需要改动就能读取，新代码也用 dimension_scores
+    """
     match_list = []
     for m in matches:
         target = m['target']
@@ -145,6 +152,7 @@ def _build_match_response(matches, config, source):
                 'id': target['id'],
                 'name': target['name'],
                 'domain': target.get('domain', ''),
+                # area 字段：机会侧用 'area'，能力侧用 'district'
                 'area': target.get('area', target.get('district', '')),
                 'overview': target.get('overview', ''),
             },
@@ -153,36 +161,29 @@ def _build_match_response(matches, config, source):
             'source_fields': m.get('source_fields', {}),
             'target_fields': m.get('target_fields', {}),
         }
-        # v2 兼容扁平化字段
+        # ---- v2 兼容层：把 dimension_scores 拍平为独立 key ----
+        # 例如 domain_score=0.8, domain_match_detail="精确命中..."
+        # 前端 render.js 中既有 v2 的 dimension_scores 渲染，也有 v2 兼容读取
         if 'dimension_scores' in m:
             for dim_id, ds in m['dimension_scores'].items():
                 entry[f'{dim_id}_score'] = ds['score']
                 entry[f'{dim_id}_match_detail'] = ds['detail']
         else:
-            # 兜底：从扁平字段还原
+            # 兜底：如果引擎没返回 dimension_scores（旧版本），从扁平字段还原
             for key in m:
                 if key.endswith('_score') and key != 'total_score':
                     entry[key] = m[key]
                 if key.endswith('_match_detail'):
                     entry[key] = m[key]
 
-        # 附加额外字段
-        if 'sub_domain' in target:
-            entry['target']['sub_domain'] = target['sub_domain']
-        if 'welcome' in target:
-            entry['target']['welcome'] = target['welcome']
-        if 'category' in target:
-            entry['target']['category'] = target['category']
-        if 'unit' in target:
-            entry['target']['unit'] = target['unit']
-        if 'company' in target:
-            entry['target']['company'] = target['company']
-        if 'highlight' in target:
-            entry['target']['highlight'] = target['highlight']
-        if 'effect' in target:
-            entry['target']['effect'] = target['effect']
-        if 'target_customer' in target:
-            entry['target']['target_customer'] = target['target_customer']
+        # ---- 透传 target 中的可选字段（机会和能力侧字段不同） ----
+        # 不做硬编码，字段存在才透传，这样新增字段只需数据源增加即可
+        for extra_field in [
+            'sub_domain', 'welcome', 'category', 'unit',
+            'company', 'highlight', 'effect', 'target_customer'
+        ]:
+            if extra_field in target:
+                entry['target'][extra_field] = target[extra_field]
 
         match_list.append(entry)
 
@@ -341,11 +342,18 @@ def api_delete_dimension(dim_id):
 @app.route('/api/config', methods=['GET', 'POST', 'OPTIONS'])
 def api_config():
     """
-    GET  /api/config  → 返回当前匹配参数
-    POST /api/config  → 更新匹配参数（接收 JSON body）
+    GET  → 返回当前匹配参数（含所有权重 key 和维度私有参数）
+    POST → 更新匹配参数
+
+    POST 校验流程：
+      1) 类型校验：权重必须是 0~1 的 float，top_n 必须是 >=1 的 int
+      2) 维度私有参数校验：从 DIMENSIONS 注册表读取每个 param 的 type/min/max
+      3) 权重自动缩放：如果任意权重有更新且和 ≠ 1.0，则等比例缩放到和为 1
+         例如 domain=0.5, text=0.5 → sum=1.0 ✓ 不缩放
+              domain=0.8, text=0.8 → sum=1.6 → 缩放到 0.5 和 0.5
 
     POST body 示例：
-      {"domain_weight": 0.7, "text_weight": 0.3, "text_max_length": 500}
+      {"domain_weight": 0.7, "text_weight": 0.3, "top_n": 5}
     """
     if request.method == 'OPTIONS':
         return '', 204
@@ -356,27 +364,28 @@ def api_config():
             if body is None:
                 return jsonify({'error': '请求体为空，请提供 JSON'}), 400
 
+            # 从维度注册表获取当前有效的所有权重 key（如 domain_weight, text_weight, region_weight）
             valid_weight_keys = set(get_weight_keys())
 
-            # 类型校验：权重 key
+            # ---- 1) 权重 key 类型 & 范围校验 ----
             for key in valid_weight_keys:
                 if key in body and not isinstance(body[key], (int, float)):
                     return jsonify({'error': f'{key} 必须是数值'}), 400
                 if key in body and not (0 <= body[key] <= 1):
                     return jsonify({'error': f'{key} 必须在 0~1 之间'}), 400
 
-            # 类型校验：top_n
+            # ---- 2) top_n 校验 ----
             if 'top_n' in body:
                 if not isinstance(body['top_n'], int):
                     return jsonify({'error': 'top_n 必须是整数'}), 400
                 if body['top_n'] < 1:
                     return jsonify({'error': 'top_n 必须 >= 1'}), 400
 
-            # 类型校验：维度私有参数（如 text_max_length）
+            # ---- 3) 维度私有参数校验（遍历 DIMENSIONS 注册表） ----
             from matcher.dimensions import DIMENSIONS
             for dim in DIMENSIONS:
                 for pk, pv in dim.get('params', {}).items():
-                    config_key = f"{dim['id']}_{pk}"
+                    config_key = f"{dim['id']}_{pk}"  # 如 "text_max_length"
                     if config_key in body:
                         if pv['type'] == 'int' and not isinstance(body[config_key], int):
                             return jsonify({'error': f'{config_key} 必须是整数'}), 400
@@ -385,16 +394,18 @@ def api_config():
                         if 'max' in pv and body[config_key] > pv['max']:
                             return jsonify({'error': f'{config_key} 必须 <= {pv["max"]}'}), 400
 
-            # 权重自动缩放：检测任意权重 key 是否有更新
+            # ---- 4) 权重自动缩放（如果用户修改了任意权重） ----
             weight_updated = any(k in body for k in valid_weight_keys)
 
             if weight_updated:
+                # 收集所有权重值（body 中有的用 body，没有的用当前配置）
                 current_cfg = get_config()
                 weights = []
                 for k in valid_weight_keys:
                     val = float(body[k]) if k in body else current_cfg.get(k, 0.0)
                     weights.append(val)
                 s = sum(weights)
+                # 如果和不是 1.0 且不是全零，等比例缩放
                 if s > 0.001 and abs(s - 1.0) > 0.001:
                     factor = 1.0 / s
                     for k in valid_weight_keys:
@@ -409,7 +420,7 @@ def api_config():
         except Exception as e:
             return jsonify({'error': str(e)}), 400
 
-    # GET 请求
+    # GET 请求：直接返回当前完整配置
     return jsonify(get_config())
 
 

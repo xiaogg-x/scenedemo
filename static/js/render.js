@@ -39,31 +39,45 @@ function nl2br(text) {
  * @param {float} totalScore  - 综合得分
  * @returns {string} HTML 字符串
  */
+/**
+ * 生成多色百分比进度条。
+ *
+ * v3：接受 dimension_scores 对象，自动按维度颜色渲染。
+ * 进度条的每个色块代表一个维度的加权贡献（score × weight）。
+ *
+ * 例如 3 个维度的贡献分别为 34%、21%、35%，则渲染为
+ * [蓝色34%][绿色21%][橙色35%] 的综合进度条。
+ *
+ * @param {object} dimScores - {dimId: {score, weight}, ...}
+ * @param {float} totalScore  - 综合得分（Σ score×weight）
+ * @returns {string} HTML 字符串
+ */
 function scoreBar(dimScores, totalScore) {
     const totalPct = (totalScore * 100).toFixed(1);
 
-    // 筛选有贡献的维度，按原始注册表顺序排序
+    // 获取维度注册表顺序，确保色块按定义顺序排列
     const dims = State.getDimensions() || [];
     const dimOrder = dims.map(d => d.id);
+
+    // 筛选有贡献的维度（score × weight > 0）
     const activeDims = [];
     for (const dimId of dimOrder) {
         const ds = dimScores[dimId];
         if (!ds) continue;
         const contribPct = parseInt((ds.score * ds.weight * 100).toFixed(0));
-        if (contribPct === 0) continue;
+        if (contribPct === 0) continue;   // 贡献为0不显示色块
         activeDims.push({ dimId, ds, contribPct });
     }
 
+    // 构建色块 HTML
     let barsHtml = '';
     for (let i = 0; i < activeDims.length; i++) {
         const { dimId, ds, contribPct } = activeDims[i];
         const dim = State.getDimensionById(dimId);
         const color = dim ? dim.color : '#94A3B8';
         const label = dim ? dim.score_label : dimId;
-        const rawPct = (ds.score * 100).toFixed(0);
-        const weightPct = (ds.weight * 100).toFixed(0);
 
-        // 圆角逻辑：第一个有左边圆角，最后一个有右边圆角
+        // 圆角逻辑：单色块全圆角，多色块首尾各有圆角，中间无圆角
         let borderRadius = '0';
         if (activeDims.length === 1) {
             borderRadius = '4px';
@@ -73,7 +87,13 @@ function scoreBar(dimScores, totalScore) {
             borderRadius = '0 4px 4px 0';
         }
 
-        barsHtml += `<div class="score-bar-${dimId}" style="width:${contribPct}%;background:${color};border-radius:${borderRadius}" title="${label}贡献 ${contribPct}% (原始分 ${rawPct}% × 权重 ${weightPct}%)"></div>`;
+        // title 属性：悬停时显示详细贡献信息
+        const rawPct = (ds.score * 100).toFixed(0);
+        const weightPct = (ds.weight * 100).toFixed(0);
+        barsHtml += `<div class="score-bar-${dimId}"
+            style="width:${contribPct}%;background:${color};border-radius:${borderRadius}"
+            title="${label}贡献 ${contribPct}% (原始分 ${rawPct}% × 权重 ${weightPct}%)">
+        </div>`;
     }
 
     return `
@@ -395,12 +415,22 @@ function _configHasChanged(newConfig) {
 // ---- 动态滑块生成 ----
 
 /**
- * 根据维度元信息生成权重滑块 HTML，插入 #config-weight-sliders 容器。
+ * 根据维度元信息生成权重滑块 HTML。
+ *
+ * 每个维度渲染为一个 .config-section，包含：
+ *   - 维度标签（icon + label + weight_key）
+ *   - 权重百分比显示（如 40.0%）
+ *   - 删除按钮（仅在维度数 > 1 时显示，保证至少保留 1 个）
+ *   - range 滑块（0~1000，每步 0.1%，即显示时 ÷10）
+ *   - 0% / 50% / 100% 刻度标签
+ *
+ * 最后追加一个「➕ 添加匹配维度」按钮。
  */
 function _buildWeightSlidersHTML(dims, config) {
     let html = '';
-    const canDelete = dims.length > 1;
+    const canDelete = dims.length > 1;  // 至少保留 1 个维度时不可删除
     for (const dim of dims) {
+        // 当前配置中的权重值，转为 0~1000 范围（0.1% 精度）
         const rawVal = Math.round((config[dim.weight_key] || dim.default_weight || 0) * 1000);
         const deleteBtn = canDelete
             ? `<button class="dim-delete-btn" data-dim-id="${dim.id}" title="删除此维度">🗑 删除</button>`
@@ -418,7 +448,7 @@ function _buildWeightSlidersHTML(dims, config) {
             <div class="slider-labels"><span>0%</span><span>50%</span><span>100%</span></div>
         </div>`;
     }
-    // 添加维度按钮
+    // 添加维度按钮（始终显示）
     html += `
         <div class="config-section" style="text-align:center;">
             <button id="btn-add-dimension" class="config-btn config-btn-secondary">
@@ -523,11 +553,21 @@ function closeConfigModal() {
 
 // ---- 保存/取消/重置 ----
 
+/**
+ * 保存配置：从各控件收集当前值 → POST /api/config → 刷新匹配结果。
+ *
+ * 收集内容：
+ *   1) 所有维度权重滑块值（0~1000 → 转为 0~1）
+ *   2) 维度私有参数（如 text_max_length）
+ *   3) TopN 输入框值
+ *
+ * 自由模式下如果权重和 ≠ 1000，自动等比例缩放至和为 1.0（最后一个用减法兜底）。
+ */
 async function saveConfig() {
     const dims = State.getDimensions() || [];
     const newConfig = {};
 
-    // 收集所有权重滑块的值
+    // ---- 1) 收集所有维度权重（范围 0~1000，存时转为 0~1） ----
     let sumPct = 0;
     for (const dim of dims) {
         const slider = document.getElementById(`slider-${dim.id}`);
@@ -536,21 +576,24 @@ async function saveConfig() {
         newConfig[dim.weight_key] = val / 1000;
     }
 
-    // 策略1：缩放
+    // ---- 自由模式下权重自动缩放 ----
+    // 如果 sumPct ≠ 1000（即权重和 ≠ 100%），等比例缩放至和为 1.0
     if (_configStrategy === 'free' && sumPct !== 1000 && sumPct !== 0) {
         let scaledSum = 0;
         const weightKeys = dims.map(d => d.weight_key);
+        // 前 N-1 个按比例缩放
         for (let i = 0; i < weightKeys.length - 1; i++) {
             const val = newConfig[weightKeys[i]] * 1000;
             const scaled = Math.round(val * 1000 / sumPct) / 1000;
             newConfig[weightKeys[i]] = Math.max(0, Math.min(1, scaled));
             scaledSum += newConfig[weightKeys[i]];
         }
+        // 最后一个用减法兜底，保证精度
         const lastKey = weightKeys[weightKeys.length - 1];
         newConfig[lastKey] = Math.max(0, Math.min(1, Math.round((1 - scaledSum) * 1000) / 1000));
     }
 
-    // 收集维度私有参数
+    // ---- 2) 收集维度私有参数（每个维度的 params 定义） ----
     for (const dim of dims) {
         if (!dim.params) continue;
         for (const pk in dim.params) {
@@ -561,7 +604,7 @@ async function saveConfig() {
         }
     }
 
-    // TopN
+    // ---- 3) TopN ----
     const topN = parseInt(document.getElementById('input-top-n').value) || 3;
     newConfig.top_n = Math.max(1, Math.min(20, topN));
 
@@ -570,6 +613,7 @@ async function saveConfig() {
         State.setConfig(saved);
         renderConfigPanel(saved);
         closeConfigModal();
+        // 如果配置有变化，自动重新匹配
         if (_configHasChanged(newConfig)) await _refetchCurrentMatch();
     } catch (err) {
         alert('保存失败：' + err.message);
@@ -651,20 +695,33 @@ function _syncDisplayFromSliders() {
 
 
 /**
- * 联动模式：修改一个权重，其余按比例等比例缩放填满 1000。
- * v3：泛化为 N 维通用算法。
+ * 联动模式核心算法（N 维通用）。
+ *
+ * 当用户拖动某个权重滑块时，其余滑块的剩余空间（1000 - newValue）
+ * 按比例等比例分配给其他维度，保证始终合计 = 1000（即 100%）。
+ *
+ * 算法：
+ *   1) 收集中改动的维度之外的所有滑块及其当前值
+ *   2) 计算这些值的总和 sumOthers
+ *   3) 将剩余量 remain 按 各值/sumOthers 的比例分配
+ *   4) 前 N-2 个用比例计算，最后一个用减法兜底避免精度损失
+ *
+ * 使用 _linkedBusy 全局锁防止滑块事件递归触发。
+ *
+ * @param {string} changedId - 被用户拖动的维度 id
+ * @param {number} newValue  - 该滑块的当前值（0~1000）
  */
 function _updateLinkedSliders(changedId, newValue) {
-    _linkedBusy = true;
+    _linkedBusy = true;   // 上锁，防止本函数内设置滑块值时再次触发 input 事件
 
     const dims = State.getDimensions() || [];
-    const remain = Math.max(0, 1000 - newValue);
+    const remain = Math.max(0, 1000 - newValue);  // 剩余要分配的量
 
-    // 收集其他滑块的当前值
+    // 收集其他维度的滑块和当前值
     const others = [];
     let sumOthers = 0;
     for (const dim of dims) {
-        if (dim.id === changedId) continue;
+        if (dim.id === changedId) continue;  // 跳过被改动的那个
         const slider = document.getElementById(`slider-${dim.id}`);
         if (!slider) continue;
         const val = parseInt(slider.value) || 0;
@@ -674,20 +731,21 @@ function _updateLinkedSliders(changedId, newValue) {
 
     if (others.length === 0) { _linkedBusy = false; return; }
 
-    // 按比例分配（最后一个用减法兜底）
-    const safeSum = sumOthers || 1;
+    // 按比例分配：每个维度分得 remain × (自己当前值 / 总和)
+    const safeSum = sumOthers || 1;  // 避免除零
     let allocated = 0;
     for (let i = 0; i < others.length - 1; i++) {
         const newVal = Math.round(remain * others[i].val / safeSum);
         others[i].slider.value = newVal;
         allocated += newVal;
     }
+    // 最后一个用减法兜底（确保合计精确 = 1000）
     if (others.length > 0) {
         others[others.length - 1].slider.value = remain - allocated;
     }
 
-    _syncDisplayFromSliders();
-    _linkedBusy = false;
+    _syncDisplayFromSliders();  // 刷新所有显示值
+    _linkedBusy = false;        // 解锁
 }
 
 
@@ -710,31 +768,41 @@ function _updateStrategyHint() {
 }
 
 
-// ---- 事件绑定/解绑（v3：动态） ----
+// ---- 事件绑定/解绑（v3：按 DIMENSIONS 注册表动态绑定） ----
 
+/**
+ * 绑定所有动态滑块的事件监听器。
+ *
+ * 每次打开配置模态框时调用，确保所有滑块有正确的交互行为：
+ *   - 权重滑块：input 事件 → 自由模式更新显示，联动模式触发 _updateLinkedSliders
+ *   - 维度私有参数滑块 ↔ 数字输入框：双向同步
+ *   - TopN 滑块 ↔ 数字输入框：双向同步
+ *
+ * 所有事件引用保存在 _sliderEventRefs 中，方便关闭模态框时解绑。
+ */
 function _bindSliderEvents() {
-    _unbindSliderEvents();
+    _unbindSliderEvents();  // 先解绑旧的
 
     const dims = State.getDimensions() || [];
 
-    // 权重滑块
+    // ---- 权重滑块事件 ----
     for (const dim of dims) {
         const slider = document.getElementById(`slider-${dim.id}`);
         if (!slider) continue;
 
         const handler = function () {
-            if (_linkedBusy) return;
+            if (_linkedBusy) return;  // 联动模式更新中，跳过（防止递归）
             if (_configStrategy === 'linked') {
                 _updateLinkedSliders(dim.id, parseInt(this.value));
                 return;
             }
-            _syncDisplayFromSliders();
+            _syncDisplayFromSliders();  // 自由模式：只刷新显示
         };
         slider.addEventListener('input', handler);
         _sliderEventRefs.push({ el: slider, type: 'input', handler });
     }
 
-    // 维度私有参数滑块 ↔ 数字框双向同步
+    // ---- 维度私有参数：滑块 ↔ 数字框双向同步 ----
     for (const dim of dims) {
         if (!dim.params) continue;
         for (const pk in dim.params) {
@@ -753,7 +821,7 @@ function _bindSliderEvents() {
         }
     }
 
-    // TopN 双向同步（静态控件）
+    // ---- TopN：滑块 ↔ 数字框双向同步 ----
     const sn = document.getElementById('slider-top-n');
     const inN = document.getElementById('input-top-n');
     if (sn && inN) {
@@ -766,7 +834,10 @@ function _bindSliderEvents() {
     }
 }
 
-
+/**
+ * 解绑所有动态绑定的事件监听器。
+ * 关闭模态框时调用，防止内存泄漏和重复绑定。
+ */
 function _unbindSliderEvents() {
     for (const ref of _sliderEventRefs) {
         ref.el.removeEventListener(ref.type, ref.handler);

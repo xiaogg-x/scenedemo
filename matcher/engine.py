@@ -181,14 +181,23 @@ def _compute_dimension_scores(ability, opp):
     """
     遍历维度注册表，计算所有维度的得分。
 
+    这是匹配引擎的核心循环——完全由 DIMENSIONS 注册表驱动，
+    不对任何具体维度（领域/文本/区域）做硬编码。
+
+    对每个维度的处理步骤（4 步）：
+      1. 取字段值   —— 从 ability 和 opp 中按 ability_fields/opportunity_fields 提取值
+      2. 取私有参数  —— 从 MATCH_CONFIG 中读取该维度的 params（如 text_max_length）
+      3. 调评分函数  —— 调用 dim['compute'] 闭包（由 METHOD_REGISTRY 构建）
+      4. 取权重      —— 从 MATCH_CONFIG 取当前权重，缺省用 default_weight
+
     参数:
-        ability (dict): 场景能力数据
-        opp     (dict): 场景机会数据
+        ability (dict): 场景能力数据行
+        opp     (dict): 场景机会数据行
 
     返回:
-        tuple[dict, dict]:
-            - scores_by_dim  {dim_id: {'score': float, 'detail': ...}}
-            - total_score    float
+        tuple[dict, float]:
+            - scores_by_dim  {dim_id: {'score': float, 'detail': str|dict, 'weight': float}}
+            - total_score    float  (Σ score × weight)
     """
     scores_by_dim = {}
     total = 0.0
@@ -196,20 +205,25 @@ def _compute_dimension_scores(ability, opp):
     for dim in DIMENSIONS:
         dim_id = dim['id']
 
-        # 1. 取字段值列表
+        # 步骤 1：按维度注册表的字段列表，从数据行中提取字段值
+        # 例如领域匹配取 ['domain'] → ['人工智能（软件）']
+        #     文本匹配取 ['overview','target_customer'] → [概述文本, 意向客户文本]
         a_vals = [ability.get(f, '') for f in dim['ability_fields']]
         o_vals = [opp.get(f, '') for f in dim['opportunity_fields']]
 
-        # 2. 取维度私有参数（如 text 的 max_length）
+        # 步骤 2：从 MATCH_CONFIG 中读取维度私有参数
+        # 例如 bigram 方法的 max_length 参数 → MATCH_CONFIG['text_max_length'] 或默认 300
         dim_params = {}
         for pk, pv in dim.get('params', {}).items():
             config_key = f"{dim_id}_{pk}"
             dim_params[pk] = MATCH_CONFIG.get(config_key, pv['default'])
 
-        # 3. 调评分函数
+        # 步骤 3：调用 compute 闭包 → (score, detail)
+        # compute 闭包由 METHOD_REGISTRY[method]['build_compute'](dim_def) 构建
+        # 内部已记住字段名、标签等上下文，调用方只需要传值和参数
         score, detail = dim['compute'](a_vals, o_vals, dim_params)
 
-        # 4. 取权重
+        # 步骤 4：取权重（当前配置中该维度的重要程度 0~1）
         weight = MATCH_CONFIG.get(dim['weight_key'], dim['default_weight'])
 
         scores_by_dim[dim_id] = {
@@ -217,19 +231,24 @@ def _compute_dimension_scores(ability, opp):
             'detail': detail,
             'weight': weight,
         }
-        total += score * weight
+        total += score * weight  # 加权累加
 
     return scores_by_dim, round(total, 4)
 
 
 def _build_match_result(opp, ability, scores_by_dim, total_score, source_is_ability=True):
     """
-    构建单条匹配结果字典。
-    同时保留 v2 兼容的扁平化 key（domain_score, text_score 等）
-    和 v3 的 dimension_scores 结构化字段。
+    构建单条匹配结果字典（v3 格式）。
 
-    source_is_ability=True  → 能力→机会匹配（source=能力, target=机会）
-    source_is_ability=False → 机会→能力匹配（source=机会, target=能力）
+    同时输出两种格式的得分数据：
+      - v3 结构化：dimension_scores → {dim_id: {score, detail, weight}, ...}
+      - v2 兼容扁平化：{dim_id}_score / {dim_id}_match_detail
+        这样老前端代码无需改动也能读取各维度得分
+
+    source_is_ability 参数决定「谁匹配谁」：
+      - True  → 能力→机会匹配（source=能力, target=机会）
+      - False → 机会→能力匹配（source=机会, target=能力）
+      source_fields / target_fields 根据此参数选择不同的中文标签
     """
     result = {
         'target': opp if source_is_ability else ability,
@@ -237,12 +256,15 @@ def _build_match_result(opp, ability, scores_by_dim, total_score, source_is_abil
         'dimension_scores': scores_by_dim,
     }
 
-    # ---- v2 兼容：扁平化得分字段 ----
+    # ---- v2 兼容：把 dimension_scores 拍平为独立字段 ----
+    # 例如 domain_score=0.8, domain_match_detail="精确命中…"
     for dim_id, ds in scores_by_dim.items():
         result[f'{dim_id}_score'] = ds['score']
         result[f'{dim_id}_match_detail'] = ds['detail']
 
-    # ---- 字段对照 ----
+    # ---- 字段对照表（中文标签 → 值） ----
+    # 能力→机会匹配时，左侧展示能力字段，右侧展示机会字段
+    # 机会→能力匹配时则反过来
     if source_is_ability:
         result['source_fields'] = {
             '产品名称': ability.get('name', ''),
@@ -304,33 +326,44 @@ def match_opportunity_to_abilities(opp, abilities):
     """
     为一条场景机会匹配 Top N 条场景能力（反向匹配）。
 
-    与 match_ability_to_opportunities 逻辑对称，评分维度完全由注册表驱动。
-    额外：领域得分为 0 时用机会的 domain 字段做兜底匹配。
+    与 match_ability_to_opportunities 逻辑对称，评分维度完全由 DIMENSIONS 注册表驱动。
+
+    额外兜底逻辑：当领域（domain）维度得分为 0 时，尝试用机会的 domain 字段
+    去匹配能力的 target_customer（意向对接客户）字段。
+    这解决了「双向匹配不对称」的问题——能力和机会的领域字段命名不同，
+    常规匹配可能因字段不同而漏掉，兜底匹配从另一个字段补回来。
+
+    例如：
+      能力 domain="人工智能" → 机会 welcome 中查"人工智能"  ← 常规领域匹配
+      机会 domain="人工智能" → 能力 target_customer 中查"人工智能" ← 兜底匹配
     """
     results = []
 
     for ability in abilities:
         scores_by_dim, total_score = _compute_dimension_scores(ability, opp)
 
-        # 领域兜底：如果领域得分为 0，用机会的 domain 字段匹配能力的 target_customer
+        # ---- 领域兜底匹配 ----
+        # 触发条件：domain 维度得分正好为 0（精确子串和大类归一化都没命中）
+        # 兜底策略：反过来用机会的 domain 去匹配能力的 target_customer 字段
         if 'domain' in scores_by_dim and scores_by_dim['domain']['score'] == 0:
             opp_domain = opp.get('domain', '')
             if opp_domain:
                 from .dimensions import _score_string_match
                 fallback_score, fallback_detail = _score_string_match(
-                    opp_domain,
-                    ability.get('target_customer', ''),
+                    opp_domain,                            # 搜索词：机会的领域
+                    ability.get('target_customer', ''),    # 被搜索文本：能力的意向对接客户
                     ability_label='机会所属领域',
                     opp_label='能力意向对接客户',
                 )
                 if fallback_score > 0:
+                    # 保留原有权重，只替换得分和详情
                     old_weight = scores_by_dim['domain']['weight']
                     scores_by_dim['domain'] = {
                         'score': fallback_score,
                         'detail': fallback_detail,
                         'weight': old_weight,
                     }
-                    # 重新计算总分
+                    # 重新计算总分（因为领域得分可能变了）
                     total_score = sum(
                         ds['score'] * ds['weight']
                         for ds in scores_by_dim.values()

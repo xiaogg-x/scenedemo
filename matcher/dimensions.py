@@ -172,17 +172,31 @@ def _score_text(text_a, text_b, max_len=300):
 # ============================================================================
 # 匹配方法注册表 —— 新增方法在此注册
 # ============================================================================
-# 每种方法需要定义：
-#   build_compute(dim_def) → compute 闭包
-#   default_detail_type       → 前端渲染方式
-#   default_params           → 默认私有参数（无则为 {}）
+# 每种方法的条目结构：
+#   build_compute(dim_def)     → 工厂函数，接收 dim_def，返回 compute 闭包
+#   default_detail_type        → 前端渲染方式（'text' 或 'bigram'）
+#   default_params             → 默认私有参数定义（无则为 {}）
+#   default_icon / default_color → 前端显示用的图标和颜色
+#
+# 新增方法步骤：
+#   1) 在此 METHOD_REGISTRY 中添加条目
+#   2) 实现对应的 _make_xxx_adapter(dim_def) 工厂函数
+#   3) 前端 add_dimension.js 的 _renderMethodParams() 中加对应的 UI
 # ============================================================================
 
 def _make_string_match_adapter(dim_def):
     """
     为 string_match 方法构建 compute 闭包。
-    dim_def['method_labels'] 提供 ability_label / opportunity_label。
+
+    闭包签名：compute(a_vals, o_vals, params) → (score, detail)
+      - a_vals: 从能力侧字段提取的值列表（如 ['人工智能（软件）']）
+      - o_vals: 从机会侧字段提取的值列表（如 ['人工智能大模型应用...']）
+      - params:  维度私有参数字典（string_match 不使用，始终为 {}）
+
+    闭包内部会从 dim_def 中取出 method_labels 作为详情消息的标签，
+    然后调用 _score_string_match 执行实际评分。
     """
+    # 从 dim_def.method_labels 取中文标签（用于评分详情消息）
     ability_label = (
         dim_def.get('method_labels', {})
         .get('ability', '能力值')
@@ -192,6 +206,7 @@ def _make_string_match_adapter(dim_def):
         .get('opportunity', '机会值')
     )
     def compute(a_vals, o_vals, params):
+        # string_match 默认只取第一个字段值（单字段匹配）
         return _score_string_match(
             a_vals[0] if a_vals else '',
             o_vals[0] if o_vals else '',
@@ -204,10 +219,17 @@ def _make_string_match_adapter(dim_def):
 def _make_bigram_adapter(dim_def):
     """
     为 bigram 方法构建 compute 闭包。
-    使用 dim_def['ability_fields'] / opportunity_fields 拼接文本。
+
+    bigram 方法支持多字段：将 ability_fields 和 opportunity_fields
+    对应的所有字段值用空格拼接成一大段文本，然后调用 _score_text 做
+    中文 2-gram Jaccard 相似度计算。
+
+    闭包签名：compute(a_vals, o_vals, params) → (score, detail)
+      - params['max_length']: 文本截取长度（默认 300，避免超长文本稀释相似度）
     """
     def compute(a_vals, o_vals, params):
         max_len = params.get('max_length', 300)
+        # 多字段值用空格拼接（如 overview + target_customer 拼接）
         return _score_text(
             ' '.join(a_vals),
             ' '.join(o_vals),
@@ -478,39 +500,49 @@ def get_next_dim_id():
 def add_dimension(dim_def):
     """
     添加一个新维度。
+
+    处理流程：
+      1) 自动生成/校验 id（不重复）
+      2) 自动生成 weight_key（格式：{id}_weight）
+      3) 校验 method 在 METHOD_REGISTRY 中
+      4) 从 METHOD_REGISTRY 填充默认值（detail_type, icon, color, params 等）
+      5) ability_fields / opportunity_fields 字符串→列表兼容转换
+      6) _dim_def_to_runtime() 构建含 compute 闭包的运行时对象
+      7) 追加到 DIMENSIONS 全局列表 + 持久化 JSON
+
     dim_def 是 JSON 格式的 dict（不含 compute）。
-    自动生成 id / weight_key（如果未提供）。
     返回：(success: bool, msg: str, dim: dict|None)
     """
     global DIMENSIONS
 
-    # 检查 id 冲突（自动生成则写回 dim_def）
+    # ---- 1) id 处理：用户没传则自动生成 dim_N ----
     dim_id = dim_def.get('id', '').strip()
     if not dim_id:
         dim_id = get_next_dim_id()
-        dim_def['id'] = dim_id
+        dim_def['id'] = dim_id       # 写回，后续持久化时需要
     if get_dimension_by_id(dim_id):
         return False, f'维度 ID「{dim_id}」已存在', None
 
-    # 自动生成 weight_key
+    # ---- 2) weight_key 生成 ----
     if 'weight_key' not in dim_def:
         dim_def['weight_key'] = f'{dim_id}_weight'
 
-    # 方法校验
+    # ---- 3) method 校验 ----
     method = dim_def.get('method', 'string_match')
     if method not in METHOD_REGISTRY:
         return False, f'未知匹配方法：{method}', None
 
-    # 填充方法默认值
+    # ---- 4) 从 METHOD_REGISTRY 填充该方法专属的默认值 ----
     reg = METHOD_REGISTRY[method]
     dim_def.setdefault('detail_type', reg['default_detail_type'])
     dim_def.setdefault('icon', reg['default_icon'])
     dim_def.setdefault('color', reg['default_color'])
-    dim_def.setdefault('default_weight', 0.0)
+    dim_def.setdefault('default_weight', 0.0)           # 新增维度默认权重 0（不抢分）
     dim_def.setdefault('score_label', dim_def.get('label', dim_id))
     dim_def.setdefault('params', reg['default_params'])
 
-    # 转换 ability_fields / opportunity_fields 为列表（前端可能传字符串）
+    # ---- 5) ability_fields / opportunity_fields 字符串→列表兼容 ----
+    # 前端可能传单个字符串而非列表，这里做兼容处理
     if isinstance(dim_def.get('ability_fields'), str):
         dim_def['ability_fields'] = [dim_def['ability_fields']]
     if isinstance(dim_def.get('opportunity_fields'), str):
@@ -518,12 +550,12 @@ def add_dimension(dim_def):
     dim_def.setdefault('ability_fields', [])
     dim_def.setdefault('opportunity_fields', [])
 
-    # 构建运行时格式（含 compute）
+    # ---- 6) 构建运行时格式（含 compute 闭包）并追加到全局列表 ----
     rt = _dim_def_to_runtime(dim_def)
     DIMENSIONS.append(rt)
-    _save_dimensions()
+    _save_dimensions()   # 持久化到 dimensions.json
 
-    # 返回可序列化版本（不含 compute）
+    # ---- 7) 返回可序列化版本（不含 compute 函数） ----
     return True, f'维度「{dim_def["label"]}」已添加', _runtime_to_dim_def(rt)
 
 
