@@ -11,6 +11,92 @@
     const BASE = '';
 
     /* ====================================================================
+     * 多选字段面板工具函数
+     * ==================================================================== */
+
+    /**
+     * 向指定容器填充字段 checkbox 列表（含全选/取消全选按钮）
+     */
+    function _populateFieldCheckboxes(containerId, fields, countId) {
+        const container = document.getElementById(containerId);
+        const countEl   = document.getElementById(countId);
+        if (!container) return;
+
+        // 全选/取消行 + checkbox 列表
+        let html = '<div class="multi-select-actions">';
+        html += `<button type="button" data-action="select-all" data-target="${containerId}">全选</button>`;
+        html += `<button type="button" data-action="deselect-all" data-target="${containerId}">取消全选</button>`;
+        html += '</div>';
+
+        fields.forEach(f => {
+            html += `<label><input type="checkbox" value="${_escapeHtml(f)}" data-target="${containerId}"> ${_escapeHtml(f)}</label>`;
+        });
+
+        container.innerHTML = html;
+        _updateFieldCount(containerId, countId);
+    }
+
+    /** 从多选面板收集所有已选中字段值 */
+    function _getSelectedFields(containerId) {
+        const container = document.getElementById(containerId);
+        if (!container) return [];
+        const cbs = container.querySelectorAll('input[type="checkbox"]:checked');
+        return Array.from(cbs).map(cb => cb.value);
+    }
+
+    /** 更新已选计数显示 */
+    function _updateFieldCount(containerId, countId) {
+        const selected = _getSelectedFields(containerId);
+        const el = document.getElementById(countId);
+        if (el) {
+            el.textContent = selected.length > 0
+                ? `（已选 ${selected.length} 个）`
+                : '（未选择）';
+        }
+    }
+
+    /** 简单 HTML 转义 */
+    function _escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    /** 多选面板的 change 事件代理 */
+    function _onFieldCheckboxChange(e) {
+        const cb = e.target.closest('input[type="checkbox"]');
+        if (!cb) return;
+        const targetId = cb.dataset.target;
+        if (targetId === 'add-dim-ability-fields') {
+            _updateFieldCount('add-dim-ability-fields', 'ability-field-count');
+        } else if (targetId === 'add-dim-opp-fields') {
+            _updateFieldCount('add-dim-opp-fields', 'opp-field-count');
+        }
+    }
+
+    /** 全选/取消全选按钮代理 */
+    function _onSelectAllClick(e) {
+        const btn = e.target.closest('button[data-action]');
+        if (!btn) return;
+        const action   = btn.dataset.action;
+        const targetId = btn.dataset.target;
+        const container = document.getElementById(targetId);
+        if (!container) return;
+
+        const cbs = container.querySelectorAll('input[type="checkbox"]');
+        const check = (action === 'select-all');
+
+        cbs.forEach(cb => { cb.checked = check; });
+
+        // 更新计数
+        if (targetId === 'add-dim-ability-fields') {
+            _updateFieldCount('add-dim-ability-fields', 'ability-field-count');
+        } else if (targetId === 'add-dim-opp-fields') {
+            _updateFieldCount('add-dim-opp-fields', 'opp-field-count');
+        }
+    }
+
+    /* ====================================================================
      * 打开添加模态框
      * ==================================================================== */
     async function openAddModal() {
@@ -35,23 +121,19 @@
                 ms.appendChild(opt);
             });
 
-            // 能力侧字段
-            const ab = document.getElementById('add-dim-ability-field');
-            ab.innerHTML = '<option value="">-- 请选择 --</option>';
-            (fields.ability || []).forEach(f => {
-                const opt = document.createElement('option');
-                opt.value = f; opt.textContent = f;
-                ab.appendChild(opt);
-            });
+            // 能力侧字段（多选）
+            _populateFieldCheckboxes(
+                'add-dim-ability-fields',
+                fields.ability || [],
+                'ability-field-count'
+            );
 
-            // 机会侧字段
-            const op = document.getElementById('add-dim-opp-field');
-            op.innerHTML = '<option value="">-- 请选择 --</option>';
-            (fields.opportunity || []).forEach(f => {
-                const opt = document.createElement('option');
-                opt.value = f; opt.textContent = f;
-                op.appendChild(opt);
-            });
+            // 机会侧字段（多选）
+            _populateFieldCheckboxes(
+                'add-dim-opp-fields',
+                fields.opportunity || [],
+                'opp-field-count'
+            );
 
             _renderMethodParams();
         } catch (e) {
@@ -136,20 +218,20 @@
     async function submitAdd() {
         const label        = (document.getElementById('add-dim-label')?.value || '').trim();
         const method       = document.getElementById('add-dim-method')?.value || '';
-        const abilityField = document.getElementById('add-dim-ability-field')?.value || '';
-        const oppField     = document.getElementById('add-dim-opp-field')?.value || '';
+        const abilityFields = _getSelectedFields('add-dim-ability-fields');
+        const oppFields     = _getSelectedFields('add-dim-opp-fields');
         const icon         = (document.getElementById('add-dim-icon')?.value || '').trim();
 
-        if (!label)        { alert('请填写维度名称'); return; }
-        if (!method)       { alert('请选择匹配方法'); return; }
-        if (!abilityField) { alert('请选择能力侧字段'); return; }
-        if (!oppField)     { alert('请选择机会侧字段'); return; }
+        if (!label)         { alert('请填写维度名称'); return; }
+        if (!method)        { alert('请选择匹配方法'); return; }
+        if (!abilityFields.length) { alert('请至少选择一个能力侧字段'); return; }
+        if (!oppFields.length)     { alert('请至少选择一个机会侧字段'); return; }
 
         const dimDef = {
             label:            label,
             method:           method,
-            ability_fields:   [abilityField],
-            opportunity_fields: [oppField],
+            ability_fields:   abilityFields,
+            opportunity_fields: oppFields,
         };
         if (icon) dimDef.icon = icon;
 
@@ -191,6 +273,16 @@
         // 方法切换
         const ms = document.getElementById('add-dim-method');
         if (ms) ms.addEventListener('change', _renderMethodParams);
+
+        // 多选面板 checkbox 变化 → 更新计数
+        const abContainer = document.getElementById('add-dim-ability-fields');
+        if (abContainer) abContainer.addEventListener('change', _onFieldCheckboxChange);
+        const opContainer = document.getElementById('add-dim-opp-fields');
+        if (opContainer) opContainer.addEventListener('change', _onFieldCheckboxChange);
+
+        // 全选/取消全选按钮点击
+        if (abContainer) abContainer.addEventListener('click', _onSelectAllClick);
+        if (opContainer) opContainer.addEventListener('click', _onSelectAllClick);
 
         // 关闭 X
         const closeX = document.getElementById('add-dim-close-x');

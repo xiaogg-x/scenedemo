@@ -192,9 +192,13 @@ def _make_string_match_adapter(dim_def):
     为 string_match 方法构建 compute 闭包。
 
     闭包签名：compute(a_vals, o_vals, params) → (score, detail)
-      - a_vals: 从能力侧字段提取的值列表（如 ['人工智能（软件）']）
-      - o_vals: 从机会侧字段提取的值列表（如 ['人工智能大模型应用...']）
+      - a_vals: 从能力侧字段提取的值列表（如 ['人工智能（软件）', 'AI平台']）
+      - o_vals: 从机会侧字段提取的值列表（如 ['人工智能大模型应用...', '智能制造']）
       - params:  维度私有参数字典（string_match 不使用，始终为 {}）
+
+    支持多字段匹配策略：
+      遍历 a_vals × o_vals 所有组合，对每一对调用 _score_string_match，
+      取最高分作为最终得分。详情消息为所有命中组合的汇总。
 
     闭包内部会从 dim_def 中取出 method_labels 作为详情消息的标签，
     然后调用 _score_string_match 执行实际评分。
@@ -209,13 +213,46 @@ def _make_string_match_adapter(dim_def):
         .get('opportunity', '机会值')
     )
     def compute(a_vals, o_vals, params):
-        # string_match 默认只取第一个字段值（单字段匹配）
-        return _score_string_match(
-            a_vals[0] if a_vals else '',
-            o_vals[0] if o_vals else '',
-            ability_label=ability_label,
-            opp_label=opp_label,
-        )
+        # 过滤空值（空字符串不参与匹配）
+        clean_a = [v for v in a_vals if v and v.strip()]
+        clean_o = [v for v in o_vals if v and v.strip()]
+
+        if not clean_a or not clean_o:
+            return _score_string_match(
+                clean_a[0] if clean_a else '',
+                clean_o[0] if clean_o else '',
+                ability_label=ability_label,
+                opp_label=opp_label,
+            )
+
+        # 多字段：遍历所有组合取最佳匹配
+        best_score = 0.0
+        best_detail = ''
+        hits = []
+
+        for av in clean_a:
+            for ov in clean_o:
+                s, d = _score_string_match(
+                    av, ov,
+                    ability_label=ability_label,
+                    opp_label=opp_label,
+                )
+                if s > 0:
+                    hits.append((av, ov, s))
+                if s > best_score:
+                    best_score = s
+                    best_detail = d
+
+        # 构建汇总详情
+        if hits:
+            parts = [best_detail]
+            if len(hits) > 1:
+                hit_strs = [f'  - {a} <-> {o}（得分 {s:.3f}）' for a, o, s in hits]
+                parts.append(f'多字段匹配命中 {len(hits)} 组：\n' + '\n'.join(hit_strs))
+            return best_score, '\n'.join(parts)
+
+        return best_score, best_detail or f'无匹配：（{ability_label}）vs（{opp_label}）未命中'
+
     return compute
 
 

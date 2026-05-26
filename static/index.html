@@ -148,17 +148,25 @@
                         <option value="">-- 请选择 --</option>
                     </select>
                 </div>
+                <!-- 能力侧字段（多选） -->
                 <div class="config-section">
-                    <div class="config-label">能力侧字段 *</div>
-                    <select id="add-dim-ability-field" class="config-select">
-                        <option value="">-- 请选择 --</option>
-                    </select>
+                    <div class="config-label">
+                        能力侧字段 *
+                        <span class="multi-select-count" id="ability-field-count">（未选择）</span>
+                    </div>
+                    <div class="multi-select-box" id="add-dim-ability-fields">
+                        <!-- JS 动态填充 checkbox 列表 -->
+                    </div>
                 </div>
+                <!-- 机会侧字段（多选） -->
                 <div class="config-section">
-                    <div class="config-label">机会侧字段 *</div>
-                    <select id="add-dim-opp-field" class="config-select">
-                        <option value="">-- 请选择 --</option>
-                    </select>
+                    <div class="config-label">
+                        机会侧字段 *
+                        <span class="multi-select-count" id="opp-field-count">（未选择）</span>
+                    </div>
+                    <div class="multi-select-box" id="add-dim-opp-fields">
+                        <!-- JS 动态填充 checkbox 列表 -->
+                    </div>
                 </div>
                 <div class="config-section">
                     <div class="config-label">图标（Emoji，可选）</div>

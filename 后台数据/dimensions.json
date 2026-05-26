@@ -76,49 +76,22 @@
   },
   {
     "label": "新增匹配",
-    "method": "bigram",
+    "method": "vector_semantic",
     "ability_fields": [
-      "district"
+      "district",
+      "overview"
     ],
     "opportunity_fields": [
-      "area"
+      "area",
+      "overview"
     ],
     "id": "dim_1",
     "weight_key": "dim_1_weight",
-    "detail_type": "bigram",
-    "icon": "📐",
-    "color": "#22C55E",
-    "default_weight": 0.0,
-    "score_label": "新增匹配",
-    "params": {
-      "max_length": {
-        "default": 300,
-        "label": "文本截取长度",
-        "hint": "文本匹配时截取前 N 个中文字符，避免超长文本稀释相似度。",
-        "type": "int",
-        "min": 50,
-        "max": 2000,
-        "step": 10,
-        "slider_max": 2000
-      }
-    }
-  },
-  {
-    "label": "又新增匹配",
-    "method": "vector_semantic",
-    "ability_fields": [
-      "overview"
-    ],
-    "opportunity_fields": [
-      "overview"
-    ],
-    "id": "dim_2",
-    "weight_key": "dim_2_weight",
     "detail_type": "vector",
     "icon": "🧠",
     "color": "#8B5CF6",
     "default_weight": 0.0,
-    "score_label": "又新增匹配",
+    "score_label": "新增匹配",
     "params": {
       "model_name": {
         "default": "BAAI/bge-small-zh-v1.5",

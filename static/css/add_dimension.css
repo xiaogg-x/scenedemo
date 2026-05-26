@@ -46,3 +46,64 @@
 .config-select:focus {
     border-color: var(--color-primary, #2563EB);
 }
+
+/* ============================================================
+ * 多选字段面板
+ * ============================================================ */
+.multi-select-box {
+    max-height: 180px;
+    overflow-y: auto;
+    border: 1px solid var(--color-border, #E2E8F0);
+    border-radius: var(--radius-sm, 6px);
+    padding: 8px 0;
+    background: #fafbfc;
+}
+
+.multi-select-box label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 12px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 0.15s;
+}
+.multi-select-box label:hover {
+    background: rgba(37, 99, 235, 0.06);
+}
+
+.multi-select-box input[type="checkbox"] {
+    accent-color: var(--color-primary, #2563EB);
+    flex-shrink: 0;
+}
+
+/* 全选/取消 按钮行 */
+.multi-select-actions {
+    display: flex;
+    gap: 6px;
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--color-border, #E2E8F0);
+    margin-bottom: 0;
+}
+.multi-select-actions button {
+    background: none;
+    border: 1px solid var(--color-border, #CBD5E1);
+    border-radius: 4px;
+    padding: 2px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    color: var(--color-text-secondary, #64748B);
+}
+.multi-select-actions button:hover {
+    background: var(--color-primary, #2563EB);
+    color: #fff;
+    border-color: var(--color-primary, #2563EB);
+}
+
+/* 已选计数 */
+.multi-select-count {
+    font-size: 12px;
+    color: var(--color-text-secondary, #64748B);
+    font-weight: normal;
+    margin-left: 6px;
+}
