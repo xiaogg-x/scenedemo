@@ -13,8 +13,9 @@ const State = (function () {
     // 默认配置常量（与后端 engine.py 中的 MATCH_CONFIG 保持一致）
     // ====================================================================
     const DEFAULT_CONFIG = {
-        domain_weight:   0.6,
-        text_weight:     0.4,
+        domain_weight:   0.4,
+        text_weight:     0.3,
+        region_weight:   0.3,
         top_n:           3,
         text_max_length: 300,
     };

@@ -48,6 +48,7 @@ def load_abilities(filepath):
             - name:         str, 产品名称
             - company:      str, 企业名称
             - domain:       str, 所属产业领域（归一化的领域关键词）
+            - district:     str, 所属区（开发区）
             - overview:     str, 能力概述（清洗后）
             - highlight:    str, 创新亮点
             - effect:       str, 应用实效
@@ -62,6 +63,7 @@ def load_abilities(filepath):
             'name':            _safe_str(row.get('产品名称')),
             'company':         _safe_str(row.get('企业名称')),
             'domain':          _safe_str(row.get('所属产业领域')),
+            'district':        _safe_str(row.get('所属区（开发区）')),
             'overview':        _safe_str(row.get('能力概述')),
             'highlight':       _safe_str(row.get('创新亮点')),
             'effect':          _safe_str(row.get('应用实效')),

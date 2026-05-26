@@ -7,7 +7,9 @@ engine.py —— 匹配引擎模块（v2：返回详细匹配明细）
   每条匹配结果携带完整的评分明细，方便前端展示和参数调优。
 
 核心算法：
-  total_score = domain_score × DOMAIN_WEIGHT + text_score × TEXT_WEIGHT
+  total_score = domain_score × DOMAIN_WEIGHT
+              + text_score   × TEXT_WEIGHT
+              + region_score × REGION_WEIGHT
 
   domain_score（领域得分）：在"欢迎合作方向"文本中检索能力领域关键词
     - 精确命中（子串匹配） → 1.0
@@ -16,6 +18,10 @@ engine.py —— 匹配引擎模块（v2：返回详细匹配明细）
 
   text_score（文本重叠度）：中文 2-gram Jaccard 相似度
     - 提取两个文本的 bigram 字符集 → 计算交集/并集比值
+
+  region_score（区域得分）：能力所属区 vs 机会所属区域
+    - 精确匹配（完全相同） → 1.0
+    - 不匹配 → 0.0
 
 API：
   match_ability_to_opportunities(ability, opportunities) → list[dict] (Top N)
@@ -37,8 +43,9 @@ from .normalizer import normalize_domain
 # 前端可通过 POST /api/config 动态更新
 # ============================================================================
 MATCH_CONFIG = {
-    'domain_weight':   0.6,    # 领域匹配权重（0~1，与 text_weight 之和应为 1）
-    'text_weight':     0.4,    # 文本相似度权重（0~1，与 domain_weight 之和应为 1）
+    'domain_weight':   0.4,    # 领域匹配权重（0~1）
+    'text_weight':     0.3,    # 文本相似度权重（0~1）
+    'region_weight':   0.3,    # 区域匹配权重（0~1）
     'top_n':           3,      # 返回前 N 条最佳匹配
     'text_max_length': 300,    # 文本匹配时截取的最大汉字数（避免超长文本稀释相似度）
 }
@@ -96,7 +103,7 @@ def update_config(new_config):
     返回:
         dict: 更新后的完整配置
     """
-    for key in ('domain_weight', 'text_weight', 'top_n', 'text_max_length'):
+    for key in ('domain_weight', 'text_weight', 'region_weight', 'top_n', 'text_max_length'):
         if key in new_config:
             MATCH_CONFIG[key] = new_config[key]
     save_config_to_file()
@@ -296,6 +303,45 @@ def compute_text_score(text_a, text_b):
     return score, detail
 
 
+def compute_region_score(ability_district, opp_area):
+    """
+    计算区域匹配得分，同时返回匹配详情文本。
+
+    策略:
+      两端区域值完全相同 → 1.0（精确匹配）
+      否则 → 0.0（不同区，或一侧为非区级值如"南京市""江苏省"）
+
+    参数:
+        ability_district (str): 场景能力的"所属区（开发区）"
+        opp_area         (str): 场景机会的"应用场景所属区域"
+
+    返回:
+        tuple[float, str]:
+            - score  (float): 1.0 / 0.0
+            - detail (str):   人类可读的匹配过程描述
+    """
+    a = (ability_district or '').strip()
+    b = (opp_area or '').strip()
+
+    if not a or not b:
+        return 0.0, '无有效区域信息可供匹配（一侧区域字段为空）'
+
+    if a == b:
+        return 1.0, (
+            f'区域匹配（得分：1.0）\n'
+            f'能力所属区：「{a}」\n'
+            f'机会所属区域：「{b}」\n'
+            f'判定：完全一致，同区匹配'
+        )
+
+    return 0.0, (
+        f'区域不匹配（得分：0.0）\n'
+        f'能力所属区：「{a}」\n'
+        f'机会所属区域：「{b}」\n'
+        f'判定：非同区'
+    )
+
+
 # ============================================================================
 # 匹配入口函数（v2：返回详细匹配明细）
 # ============================================================================
@@ -322,11 +368,13 @@ def match_ability_to_opportunities(ability, opportunities):
     """
     ability_text   = ability.get('overview', '') + ' ' + ability.get('target_customer', '')
     ability_domain = ability.get('domain', '')
+    ability_district = ability.get('district', '')
 
     # 要参与 match_fields 展示的能力侧字段
     ability_fields = {
         '产品名称':   ability.get('name', ''),
         '所属产业领域': ability.get('domain', ''),
+        '所属区':     ability_district,
         '能力概述':   ability.get('overview', ''),
         '意向对接客户': ability.get('target_customer', ''),
     }
@@ -335,6 +383,7 @@ def match_ability_to_opportunities(ability, opportunities):
 
     for opp in opportunities:
         opp_welcome = opp.get('welcome', '')
+        opp_area    = opp.get('area', '')
 
         # ---- 计算领域得分 + 详情 ----
         domain_score, domain_detail = compute_domain_score(ability_domain, opp_welcome)
@@ -343,13 +392,21 @@ def match_ability_to_opportunities(ability, opportunities):
         opp_text = opp.get('overview', '') + ' ' + opp_welcome
         text_score, text_detail = compute_text_score(ability_text, opp_text)
 
+        # ---- 计算区域得分 + 详情 ----
+        region_score, region_detail = compute_region_score(ability_district, opp_area)
+
         # ---- 综合评分 ----
-        total_score = domain_score * MATCH_CONFIG['domain_weight'] + text_score * MATCH_CONFIG['text_weight']
+        total_score = (
+            domain_score * MATCH_CONFIG['domain_weight']
+            + text_score   * MATCH_CONFIG['text_weight']
+            + region_score * MATCH_CONFIG['region_weight']
+        )
 
         # ---- 要展示的机会侧字段对照 ----
         opp_fields = {
             '应用场景项目名称': opp.get('name', ''),
             '应用场景所属领域': opp.get('domain', ''),
+            '应用场景所属区域': opp_area,
             '应用场景概述':   opp.get('overview', ''),
             '欢迎合作方向':   opp_welcome,
         }
@@ -358,9 +415,11 @@ def match_ability_to_opportunities(ability, opportunities):
             'target':              opp,
             'domain_score':         round(domain_score, 4),
             'text_score':           round(text_score, 4),
+            'region_score':         round(region_score, 4),
             'total_score':          round(total_score, 4),
             'domain_match_detail':  domain_detail,
             'text_match_detail':    text_detail,
+            'region_match_detail':  region_detail,
             'source_fields':        ability_fields,
             'target_fields':        opp_fields,
         })
@@ -388,11 +447,13 @@ def match_opportunity_to_abilities(opp, abilities):
     opp_text    = opp.get('overview', '') + ' ' + opp.get('welcome', '')
     opp_welcome = opp.get('welcome', '')
     opp_domain_raw = opp.get('domain', '')
+    opp_area    = opp.get('area', '')
 
     # 机会侧要展示的字段
     opp_fields = {
         '应用场景项目名称': opp.get('name', ''),
         '应用场景所属领域': opp.get('domain', ''),
+        '应用场景所属区域': opp_area,
         '应用场景概述':   opp.get('overview', ''),
         '欢迎合作方向':   opp_welcome,
     }
@@ -400,6 +461,8 @@ def match_opportunity_to_abilities(opp, abilities):
     results = []
 
     for ability in abilities:
+        ability_district = ability.get('district', '')
+
         # ---- 领域得分 ----
         # 优先用"欢迎合作方向"匹配能力的领域（机会侧欢迎合作方向前缀 = 能力领域）
         domain_score, domain_detail = compute_domain_score(
@@ -420,13 +483,21 @@ def match_opportunity_to_abilities(opp, abilities):
         ability_text = ability.get('overview', '') + ' ' + ability.get('target_customer', '')
         text_score, text_detail = compute_text_score(opp_text, ability_text)
 
+        # ---- 区域得分 ----
+        region_score, region_detail = compute_region_score(ability_district, opp_area)
+
         # ---- 综合评分 ----
-        total_score = domain_score * MATCH_CONFIG['domain_weight'] + text_score * MATCH_CONFIG['text_weight']
+        total_score = (
+            domain_score * MATCH_CONFIG['domain_weight']
+            + text_score   * MATCH_CONFIG['text_weight']
+            + region_score * MATCH_CONFIG['region_weight']
+        )
 
         # 能力侧字段对照
         ability_fields = {
             '产品名称':   ability.get('name', ''),
             '所属产业领域': ability.get('domain', ''),
+            '所属区':     ability_district,
             '能力概述':   ability.get('overview', ''),
             '意向对接客户': ability.get('target_customer', ''),
         }
@@ -435,9 +506,11 @@ def match_opportunity_to_abilities(opp, abilities):
             'target':              ability,
             'domain_score':         round(domain_score, 4),
             'text_score':           round(text_score, 4),
+            'region_score':         round(region_score, 4),
             'total_score':          round(total_score, 4),
             'domain_match_detail':  domain_detail,
             'text_match_detail':    text_detail,
+            'region_match_detail':  region_detail,
             'source_fields':        opp_fields,
             'target_fields':        ability_fields,
         })

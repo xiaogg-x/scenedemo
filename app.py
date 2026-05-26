@@ -112,10 +112,11 @@ def api_abilities():
     summary = []
     for a in ALL_ABILITIES:
         summary.append({
-            'id':      a['id'],
-            'name':    a['name'],
-            'company': a['company'],
-            'domain':  a['domain'],
+            'id':       a['id'],
+            'name':     a['name'],
+            'company':  a['company'],
+            'domain':   a['domain'],
+            'district': a['district'],
         })
     return jsonify(summary)
 
@@ -177,6 +178,7 @@ def api_match_ability(ability_id):
             'name':            ability['name'],
             'company':         ability['company'],
             'domain':          ability['domain'],
+            'district':        ability['district'],
             'overview':        ability['overview'],
             'target_customer': ability['target_customer'],
         },
@@ -194,9 +196,11 @@ def api_match_ability(ability_id):
             },
             'domain_score':         m['domain_score'],
             'text_score':           m['text_score'],
+            'region_score':         m['region_score'],
             'total_score':          m['total_score'],
             'domain_match_detail':  m['domain_match_detail'],
             'text_match_detail':    m['text_match_detail'],
+            'region_match_detail':  m['region_match_detail'],
             'source_fields':        m['source_fields'],
             'target_fields':        m['target_fields'],
         } for m in matches],
@@ -231,6 +235,7 @@ def api_match_opportunity(opp_id):
             'id':         opp['id'],
             'name':       opp['name'],
             'domain':     opp['domain'],
+            'area':       opp['area'],
             'overview':   opp['overview'],
             'welcome':    opp['welcome'],
         },
@@ -240,6 +245,7 @@ def api_match_opportunity(opp_id):
                 'name':            m['target']['name'],
                 'company':         m['target']['company'],
                 'domain':          m['target']['domain'],
+                'district':        m['target']['district'],
                 'overview':        m['target']['overview'],
                 'highlight':       m['target']['highlight'],
                 'effect':          m['target']['effect'],
@@ -247,9 +253,11 @@ def api_match_opportunity(opp_id):
             },
             'domain_score':         m['domain_score'],
             'text_score':           m['text_score'],
+            'region_score':         m['region_score'],
             'total_score':          m['total_score'],
             'domain_match_detail':  m['domain_match_detail'],
             'text_match_detail':    m['text_match_detail'],
+            'region_match_detail':  m['region_match_detail'],
             'source_fields':        m['source_fields'],
             'target_fields':        m['target_fields'],
         } for m in matches],
@@ -286,7 +294,7 @@ def api_config():
                 return jsonify({'error': '请求体为空，请提供 JSON'}), 400
 
             # 类型校验
-            for key in ['domain_weight', 'text_weight']:
+            for key in ['domain_weight', 'text_weight', 'region_weight']:
                 if key in body and not isinstance(body[key], (int, float)):
                     return jsonify({'error': f'{key} 必须是数值'}), 400
                 if key in body and not (0 <= body[key] <= 1):
@@ -302,21 +310,25 @@ def api_config():
             if 'text_max_length' in body and body['text_max_length'] < 50:
                 return jsonify({'error': 'text_max_length 必须 >= 50'}), 400
 
-            # ---- 权重自动缩放（兜底）：若 domain_weight + text_weight ！= 1 则等比例缩放 ----
-            if 'domain_weight' in body and 'text_weight' in body:
-                dw = float(body['domain_weight'])
-                tw = float(body['text_weight'])
-                s  = dw + tw
+            # ---- 权重自动缩放（兜底）：三维权重之和 ！= 1 则等比例缩放 ----
+            weight_keys = ['domain_weight', 'text_weight', 'region_weight']
+            any_weight_updated = any(k in body for k in weight_keys)
+
+            if any_weight_updated:
+                # 从 body 或当前配置中取最新值
+                current_cfg = get_config()
+                weights = []
+                for k in weight_keys:
+                    val = float(body[k]) if k in body else current_cfg[k]
+                    weights.append(val)
+                dw, tw, rw = weights
+                s = dw + tw + rw
                 if s > 0.001 and abs(s - 1.0) > 0.001:
                     factor = 1.0 / s
                     body['domain_weight'] = round(dw * factor, 4)
                     body['text_weight']   = round(tw * factor, 4)
-                    print(f'[config] 权重已自动缩放至和为1：domain={body["domain_weight"]}, text={body["text_weight"]}')
-            elif 'domain_weight' in body and 'text_weight' not in body:
-                # 只更新了 domain_weight，保持 text_weight = 1 - domain_weight
-                body['text_weight'] = round(1.0 - float(body['domain_weight']), 4)
-            elif 'text_weight' in body and 'domain_weight' not in body:
-                body['domain_weight'] = round(1.0 - float(body['text_weight']), 4)
+                    body['region_weight'] = round(rw * factor, 4)
+                    print(f'[config] 权重已自动缩放至和为1：domain={body["domain_weight"]}, text={body["text_weight"]}, region={body["region_weight"]}')
 
             new_config = update_config(body)
             print(f'[config] 参数已更新: {new_config}')

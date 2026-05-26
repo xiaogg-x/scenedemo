@@ -267,6 +267,16 @@ body {
     font-weight: 500;
 }
 
+.item-tag-district {
+    font-size: 11px;
+    color: var(--color-warning);
+    background: #FEF3C7;
+    padding: 2px 10px;
+    border-radius: 50px;
+    font-weight: 500;
+    flex-shrink: 0;
+}
+
 /* ---- 底部计数 ---- */
 .panel-footer {
     padding: 10px 20px;
@@ -456,6 +466,14 @@ body {
 .score-bar-text {
     height: 100%;
     background: linear-gradient(90deg, var(--color-success), #4ADE80);
+    border-radius: 0;
+    transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    min-width: 0;
+}
+
+.score-bar-region {
+    height: 100%;
+    background: linear-gradient(90deg, var(--color-warning), #FBBF24);
     border-radius: 0 4px 4px 0;
     transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
     min-width: 0;
