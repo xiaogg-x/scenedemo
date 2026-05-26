@@ -37,6 +37,15 @@ from matcher import (
     update_config,
     load_config_from_file,
 )
+from matcher.schema import (
+    get_schema_json,
+    init_from_data,
+    get_mapping,
+    update_mapping,
+    build_scene_dict,
+    get_role,
+    get_indirect_role,
+)
 
 
 # ============================================================================
@@ -83,6 +92,12 @@ print('=' * 60)
 print(f'  数据加载完成：{len(ALL_ABILITIES)} 条能力，{len(ALL_OPPORTUNITIES)} 条机会')
 print('=' * 60)
 
+# 从实际数据初始化字段映射（自动检测字段名，与默认值比对）
+init_from_data(
+    ALL_ABILITIES[0] if ALL_ABILITIES else None,
+    ALL_OPPORTUNITIES[0] if ALL_OPPORTUNITIES else None,
+)
+
 # 启动时从持久化文件恢复匹配参数配置
 load_config_from_file()
 
@@ -105,39 +120,24 @@ def index():
 def api_abilities():
     """
     返回全部场景能力列表（仅返回前端展示所需的摘要字段）。
+    取哪些字段由 field_mapping.json 中 ability.list_summary 场景决定。
 
     返回格式：
       [{id, name, company, domain}, ...]
     """
-    summary = []
-    for a in ALL_ABILITIES:
-        summary.append({
-            'id':      a['id'],
-            'name':    a['name'],
-            'company': a['company'],
-            'domain':  a['domain'],
-        })
-    return jsonify(summary)
+    return jsonify([build_scene_dict(a, 'ability', 'list_summary') for a in ALL_ABILITIES])
 
 
 @app.route('/api/opportunities')
 def api_opportunities():
     """
     返回全部场景机会列表（仅返回前端展示所需的摘要字段）。
+    取哪些字段由 field_mapping.json 中 opportunity.list_summary 场景决定。
 
     返回格式：
       [{id, name, domain, sub_domain, area}, ...]
     """
-    summary = []
-    for o in ALL_OPPORTUNITIES:
-        summary.append({
-            'id':         o['id'],
-            'name':       o['name'],
-            'domain':     o['domain'],
-            'sub_domain': o['sub_domain'],
-            'area':       o['area'],
-        })
-    return jsonify(summary)
+    return jsonify([build_scene_dict(o, 'opportunity', 'list_summary') for o in ALL_OPPORTUNITIES])
 
 
 # ---------------------------------------------------------------------------
@@ -159,7 +159,7 @@ def api_match_ability(ability_id):
     # 按 ID 查找能力
     ability = None
     for a in ALL_ABILITIES:
-        if a['id'] == ability_id:
+        if get_indirect_role(a, 'ability', 'id_field') == ability_id:
             ability = a
             break
 
@@ -172,26 +172,9 @@ def api_match_ability(ability_id):
     # 构造返回结果（v2 含详细字段）
     result = {
         'config': get_config(),
-        'source': {
-            'id':              ability['id'],
-            'name':            ability['name'],
-            'company':         ability['company'],
-            'domain':          ability['domain'],
-            'overview':        ability['overview'],
-            'target_customer': ability['target_customer'],
-        },
+        'source': build_scene_dict(ability, 'ability', 'match_source'),
         'matches': [{
-            'target': {
-                'id':         m['target']['id'],
-                'name':       m['target']['name'],
-                'domain':     m['target']['domain'],
-                'sub_domain': m['target']['sub_domain'],
-                'area':       m['target']['area'],
-                'overview':   m['target']['overview'],
-                'welcome':    m['target']['welcome'],
-                'category':   m['target']['category'],
-                'unit':       m['target']['unit'],
-            },
+            'target':               build_scene_dict(m['target'], 'opportunity', 'match_target'),
             'domain_score':         m['domain_score'],
             'text_score':           m['text_score'],
             'total_score':          m['total_score'],
@@ -214,7 +197,7 @@ def api_match_opportunity(opp_id):
     # 按 ID 查找机会
     opp = None
     for o in ALL_OPPORTUNITIES:
-        if o['id'] == opp_id:
+        if get_indirect_role(o, 'opportunity', 'id_field') == opp_id:
             opp = o
             break
 
@@ -227,24 +210,9 @@ def api_match_opportunity(opp_id):
     # 构造返回结果
     result = {
         'config': get_config(),
-        'source': {
-            'id':         opp['id'],
-            'name':       opp['name'],
-            'domain':     opp['domain'],
-            'overview':   opp['overview'],
-            'welcome':    opp['welcome'],
-        },
+        'source': build_scene_dict(opp, 'opportunity', 'match_source'),
         'matches': [{
-            'target': {
-                'id':              m['target']['id'],
-                'name':            m['target']['name'],
-                'company':         m['target']['company'],
-                'domain':          m['target']['domain'],
-                'overview':        m['target']['overview'],
-                'highlight':       m['target']['highlight'],
-                'effect':          m['target']['effect'],
-                'target_customer': m['target']['target_customer'],
-            },
+            'target':               build_scene_dict(m['target'], 'ability', 'match_target'),
             'domain_score':         m['domain_score'],
             'text_score':           m['text_score'],
             'total_score':          m['total_score'],
@@ -327,6 +295,52 @@ def api_config():
 
     # GET 请求
     return jsonify(get_config())
+
+
+# ---------------------------------------------------------------------------
+# 数据表字段元数据 API
+# ---------------------------------------------------------------------------
+
+@app.route('/api/schema')
+def api_schema():
+    """
+    返回两张数据表的完整字段元数据（含匹配参与信息、前端使用位置等）。
+    用于字段元数据查看页面及后续真实数据切换时的字段对照。
+    """
+    return jsonify(get_schema_json())
+
+
+@app.route('/api/mapping', methods=['GET', 'POST', 'OPTIONS'])
+def api_mapping():
+    """
+    GET  /api/mapping  → 返回当前场景→字段映射
+    POST /api/mapping  → 更新映射（接收 JSON body）并持久化
+
+    映射结构详见 matcher/schema.py 中的 _DEFAULT_MAPPING 注释。
+    """
+    if request.method == 'OPTIONS':
+        return '', 204
+
+    if request.method == 'POST':
+        try:
+            body = request.get_json(force=True)
+            if body is None:
+                return jsonify({'error': '请求体为空，请提供 JSON'}), 400
+            update_mapping(body)
+            return jsonify({'status': 'ok', 'message': '映射已更新并持久化'})
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 400
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    # GET 请求
+    return jsonify(get_mapping())
+
+
+@app.route('/metadata')
+def metadata_page():
+    """返回字段元数据查看页面"""
+    return app.send_static_file('metadata.html')
 
 
 # ============================================================================

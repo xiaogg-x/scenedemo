@@ -15,6 +15,15 @@ from .engine import (
     update_config,
     load_config_from_file,
 )
+from .schema import (
+    init_from_data,
+    get_schema_json,
+    get_mapping,
+    update_mapping,
+    build_scene_dict,
+    get_role,
+    get_indirect_role,
+)
 
 __all__ = [
     'load_abilities',
@@ -25,4 +34,11 @@ __all__ = [
     'get_config',
     'update_config',
     'load_config_from_file',
+    'init_from_data',
+    'get_schema_json',
+    'get_mapping',
+    'update_mapping',
+    'build_scene_dict',
+    'get_role',
+    'get_indirect_role',
 ]

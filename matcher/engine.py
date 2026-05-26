@@ -28,6 +28,12 @@ import json
 import os
 import re
 from .normalizer import normalize_domain
+from .schema import (
+    get_role,
+    get_indirect_role,
+    join_text_roles,
+    build_detail_dict,
+)
 
 
 # ============================================================================
@@ -320,39 +326,29 @@ def match_ability_to_opportunities(ability, opportunities):
     返回:
         list[dict]: 按总分降序排列的前 N 条匹配结果
     """
-    ability_text   = ability.get('overview', '') + ' ' + ability.get('target_customer', '')
-    ability_domain = ability.get('domain', '')
+    ability_text   = join_text_roles(ability, 'ability')
+    ability_domain = get_indirect_role(ability, 'ability', 'domain_field')
 
     # 要参与 match_fields 展示的能力侧字段
-    ability_fields = {
-        '产品名称':   ability.get('name', ''),
-        '所属产业领域': ability.get('domain', ''),
-        '能力概述':   ability.get('overview', ''),
-        '意向对接客户': ability.get('target_customer', ''),
-    }
+    ability_fields = build_detail_dict(ability, 'ability')
 
     results = []
 
     for opp in opportunities:
-        opp_welcome = opp.get('welcome', '')
+        opp_welcome = get_indirect_role(opp, 'opportunity', 'welcome_field')
 
         # ---- 计算领域得分 + 详情 ----
         domain_score, domain_detail = compute_domain_score(ability_domain, opp_welcome)
 
         # ---- 计算文本得分 + 详情 ----
-        opp_text = opp.get('overview', '') + ' ' + opp_welcome
+        opp_text = join_text_roles(opp, 'opportunity')
         text_score, text_detail = compute_text_score(ability_text, opp_text)
 
         # ---- 综合评分 ----
         total_score = domain_score * MATCH_CONFIG['domain_weight'] + text_score * MATCH_CONFIG['text_weight']
 
         # ---- 要展示的机会侧字段对照 ----
-        opp_fields = {
-            '应用场景项目名称': opp.get('name', ''),
-            '应用场景所属领域': opp.get('domain', ''),
-            '应用场景概述':   opp.get('overview', ''),
-            '欢迎合作方向':   opp_welcome,
-        }
+        opp_fields = build_detail_dict(opp, 'opportunity')
 
         results.append({
             'target':              opp,
@@ -385,17 +381,12 @@ def match_opportunity_to_abilities(opp, abilities):
     返回:
         list[dict]: 按总分降序排列的前 N 条匹配结果（结构同上）
     """
-    opp_text    = opp.get('overview', '') + ' ' + opp.get('welcome', '')
-    opp_welcome = opp.get('welcome', '')
-    opp_domain_raw = opp.get('domain', '')
+    opp_text    = join_text_roles(opp, 'opportunity')
+    opp_welcome = get_indirect_role(opp, 'opportunity', 'welcome_field')
+    opp_domain_raw = get_indirect_role(opp, 'opportunity', 'domain_field')
 
     # 机会侧要展示的字段
-    opp_fields = {
-        '应用场景项目名称': opp.get('name', ''),
-        '应用场景所属领域': opp.get('domain', ''),
-        '应用场景概述':   opp.get('overview', ''),
-        '欢迎合作方向':   opp_welcome,
-    }
+    opp_fields = build_detail_dict(opp, 'opportunity')
 
     results = []
 
@@ -403,33 +394,28 @@ def match_opportunity_to_abilities(opp, abilities):
         # ---- 领域得分 ----
         # 优先用"欢迎合作方向"匹配能力的领域（机会侧欢迎合作方向前缀 = 能力领域）
         domain_score, domain_detail = compute_domain_score(
-            ability.get('domain', ''),
+            get_indirect_role(ability, 'ability', 'domain_field'),
             opp_welcome
         )
         # 如果得分为0，再用机会的原始领域字段做兜底匹配
         if domain_score == 0 and opp_domain_raw:
             domain_score2, domain_detail2 = compute_domain_score(
                 opp_domain_raw,
-                ability.get('target_customer', '')
+                get_role(ability, 'ability', 'target_customer')
             )
             if domain_score2 > 0:
                 domain_score = domain_score2
                 domain_detail = domain_detail2
 
         # ---- 文本得分 ----
-        ability_text = ability.get('overview', '') + ' ' + ability.get('target_customer', '')
+        ability_text = join_text_roles(ability, 'ability')
         text_score, text_detail = compute_text_score(opp_text, ability_text)
 
         # ---- 综合评分 ----
         total_score = domain_score * MATCH_CONFIG['domain_weight'] + text_score * MATCH_CONFIG['text_weight']
 
         # 能力侧字段对照
-        ability_fields = {
-            '产品名称':   ability.get('name', ''),
-            '所属产业领域': ability.get('domain', ''),
-            '能力概述':   ability.get('overview', ''),
-            '意向对接客户': ability.get('target_customer', ''),
-        }
+        ability_fields = build_detail_dict(ability, 'ability')
 
         results.append({
             'target':              ability,

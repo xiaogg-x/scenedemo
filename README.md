@@ -29,19 +29,23 @@ scenedemo/
 │   ├── __init__.py             # 包入口，统一导出
 │   ├── data_loader.py          # Excel 数据加载与清洗
 │   ├── normalizer.py           # 领域归一化映射
-│   └── engine.py               # 匹配算法引擎（v2 含详细明细）
+│   ├── engine.py               # 匹配算法引擎（含详细明细）
+│   └── schema.py               # 字段映射管理 + metadata 元数据
 ├── static/                     # 前端静态文件
-│   ├── index.html              # 主页面
+│   ├── index.html              # 主页面（匹配演示）
+│   ├── metadata.html           # 字段元数据查看页面
 │   ├── css/
 │   │   └── style.css           # 样式表
 │   └── js/
 │       ├── state.js            # 全局状态管理
 │       ├── api.js              # API 请求层
-│       ├── render.js           # DOM 渲染模块
+│       ├── render.js           # DOM 渲染 + 配置模态框
 │       └── main.js             # 主流程编排与事件绑定
-├── 后台数据/                    # 源数据文件
+├── 后台数据/                    # 源数据与配置文件
 │   ├── 场景能力数据列表.xlsx
-│   └── 场景机会数据列表.xlsx
+│   ├── 场景机会数据列表.xlsx
+│   └── field_mapping.json      # 字段映射定义（换数据集修改此文件）
+├── HOW_TO_CHANGE_DATASET.md    # 换数据集操作指南
 ├── README.md                   # 项目文档（本文件）
 └── CHANGELOG.md                # 变更日志
 ```
@@ -121,21 +125,33 @@ Jaccard(A, B) = |A ∩ B| / |A ∪ B|
 - `matches[].source_fields` — 源侧参与匹配的字段值
 - `matches[].target_fields` — 目标侧参与匹配的字段值
 
+### 元数据接口
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/schema` | 获取前端渲染 schema（字段角色映射、表名等） |
+| GET | `/api/mapping` | 获取场景→字段映射（驱动匹配逻辑） |
+| POST | `/api/mapping` | 更新场景→字段映射并持久化 |
+
 ### 参数配置接口
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/config` | 获取当前匹配参数 |
-| POST | `/api/config` | 更新匹配参数（JSON body） |
+| POST | `/api/config` | 更新匹配参数并持久化到 `config.json` |
+
+> **注意**：配置修改后会自动写入 `后台数据/config.json`，下次启动时恢复上次保存的值，而非代码中的初始默认值。
 
 可配置参数：
 
-| 参数 | 类型 | 默认值 | 说明 |
+| 参数 | 类型 | 初始默认值 | 说明 |
 |---|---|---|---|
 | `domain_weight` | float | 0.6 | 领域匹配权重 (0~1) |
 | `text_weight` | float | 0.4 | 文本相似度权重 (0~1) |
 | `top_n` | int | 3 | 返回前 N 条最佳匹配 |
 | `text_max_length` | int | 300 | 文本匹配截取汉字数 |
+
+> 以上为代码初始默认值。通过 `POST /api/config` 修改后，实际运行值将持久化到 `后台数据/config.json`。
 
 POST 示例：
 

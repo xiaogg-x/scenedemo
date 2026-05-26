@@ -101,34 +101,30 @@ function renderList() {
         return;
     }
 
+    // 从 schema 获取字段映射（找不到则退回默认值）
+    const idKey      = State.getListFieldKey('id')      || 'id';
+    const titleKey   = State.getListFieldKey('title')   || 'name';
+    const subtitleKey = State.getListFieldKey('subtitle') || (mode === 'ability' ? 'company' : 'area');
+    const tagKey     = State.getListFieldKey('tag')     || 'domain';
+    const schema     = State.getCurrentSchema();
+    const tableLabel = (schema && schema.table_label) || (mode === 'ability' ? '场景能力列表' : '场景机会列表');
+
     let html = '';
     items.forEach((item, idx) => {
-        const isActive = item.id === selectedId;
+        const itemId = item[idKey];
+        const isActive = itemId === selectedId;
         const activeCls = isActive ? 'list-item active' : 'list-item';
 
-        if (mode === 'ability') {
-            html += `
-                <div class="${activeCls}" data-id="${item.id}" data-mode="ability">
-                    <span class="item-index">${idx + 1}</span>
-                    <div class="item-info">
-                        <div class="item-name">${item.name}</div>
-                        <div class="item-meta">${item.company}</div>
-                    </div>
-                    <span class="item-tag">${item.domain || '未知'}</span>
+        html += `
+            <div class="${activeCls}" data-id="${itemId}" data-mode="${mode}">
+                <span class="item-index">${idx + 1}</span>
+                <div class="item-info">
+                    <div class="item-name">${item[titleKey] || ''}</div>
+                    <div class="item-meta">${item[subtitleKey] || ''}</div>
                 </div>
-            `;
-        } else {
-            html += `
-                <div class="${activeCls}" data-id="${item.id}" data-mode="opportunity">
-                    <span class="item-index">${idx + 1}</span>
-                    <div class="item-info">
-                        <div class="item-name">${item.name}</div>
-                        <div class="item-meta">${item.area || ''}</div>
-                    </div>
-                    <span class="item-tag">${item.domain || '未知'}</span>
-                </div>
-            `;
-        }
+                <span class="item-tag">${item[tagKey] || '未知'}</span>
+            </div>
+        `;
     });
 
     listEl.innerHTML = html;
@@ -142,7 +138,7 @@ function renderList() {
     // 更新顶栏标题
     const titleEl = document.getElementById('mode-label');
     if (titleEl) {
-        titleEl.textContent = mode === 'ability' ? '场景能力列表' : '场景机会列表';
+        titleEl.textContent = tableLabel;
     }
 }
 
@@ -204,11 +200,14 @@ function renderCards(data) {
         const src = data.source;
         const srcTitleEl = document.getElementById('source-title');
         if (srcTitleEl) {
-            srcTitleEl.textContent = src.name;
+            const titleKey = State.getListFieldKey('title') || 'name';
+            srcTitleEl.textContent = src[titleKey] || '';
         }
         const srcSubEl = document.getElementById('source-sub');
         if (srcSubEl) {
-            srcSubEl.textContent = src.company || src.domain || '';
+            const subRole = State.getCardSourceSubtitleRole();
+            const subKey = State.getListFieldKey('subtitle') || subRole;
+            srcSubEl.textContent = src[subKey] || src[subRole] || '';
         }
     }
 
@@ -226,6 +225,10 @@ function renderCards(data) {
     const dw = (data.config && data.config.domain_weight) || 0.6;
     const tw = (data.config && data.config.text_weight)   || 0.4;
 
+    // 从 schema 获取目标卡片字段（匹配结果中 target 的字段角色名）
+    const targetTitleKey = State.getListFieldKey('title') || 'name';
+    const targetTagKey   = State.getListFieldKey('tag')   || 'domain';
+
     let html = '';
 
     data.matches.forEach((m, idx) => {
@@ -239,8 +242,8 @@ function renderCards(data) {
         <div class="match-card">
             <div class="card-rank" style="background:${rankColor}">#${idx + 1}</div>
             <div class="card-header">
-                <h3 class="card-title">${t.name}</h3>
-                <span class="card-tag">${t.domain || ''}</span>
+                <h3 class="card-title">${t[targetTitleKey] || ''}</h3>
+                <span class="card-tag">${t[targetTagKey] || ''}</span>
             </div>
         `;
 

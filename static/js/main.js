@@ -15,11 +15,13 @@
 
 async function init() {
     try {
-        // 并行加载数据和配置
-        const [abilities, opportunities, config] = await Promise.all([
+        // 并行加载数据、配置、字段元数据和映射
+        const [abilities, opportunities, config, schema, mapping] = await Promise.all([
             fetchAbilities(),
             fetchOpportunities(),
             fetchConfig().catch(() => null),  // 配置加载失败不阻塞页面
+            fetchSchema().catch(() => null),  // schema 加载失败不阻塞页面
+            fetchMapping().catch(() => null), // 映射加载失败不阻塞页面
         ]);
 
         // 存入全局状态
@@ -27,6 +29,12 @@ async function init() {
         State.setOpportunities(opportunities);
         if (config) {
             State.setConfig(config);
+        }
+        if (schema) {
+            State.setSchema(schema);
+        }
+        if (mapping) {
+            State.setMapping(mapping);
         }
 
         // 渲染初始列表（默认能力模式）

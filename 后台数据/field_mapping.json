@@ -1,0 +1,148 @@
+{
+  "ability": {
+    "keys": ["id", "name", "company", "domain", "overview", "highlight", "effect", "target_customer"],
+    "scenes": {
+      "list_summary": [
+        "id",
+        "name",
+        "company",
+        "domain"
+      ],
+      "match_source": [
+        "id",
+        "name",
+        "company",
+        "domain",
+        "overview",
+        "target_customer"
+      ],
+      "match_target": [
+        "id",
+        "name",
+        "company",
+        "domain",
+        "overview",
+        "highlight",
+        "effect",
+        "target_customer"
+      ],
+      "detail_fields": [
+        "name",
+        "domain",
+        "overview",
+        "target_customer"
+      ],
+      "text_fields": [
+        "overview",
+        "target_customer"
+      ],
+      "domain_field": "domain",
+      "id_field": "id",
+      "name_field": "name"
+    },
+    "detail_labels": {
+      "name": "产品名称",
+      "domain": "所属产业领域",
+      "overview": "能力概述",
+      "target_customer": "意向对接客户"
+    },
+    "frontend_list": [
+      {
+        "role": "id",
+        "label": "序号",
+        "key": "id"
+      },
+      {
+        "role": "title",
+        "label": "产品名称",
+        "key": "name"
+      },
+      {
+        "role": "subtitle",
+        "label": "企业名称",
+        "key": "company"
+      },
+      {
+        "role": "tag",
+        "label": "所属产业领域",
+        "key": "domain"
+      }
+    ],
+    "table_label": "场景能力数据列表",
+    "card_source_subtitle": "company"
+  },
+  "opportunity": {
+    "keys": ["id", "name", "domain", "sub_domain", "area", "overview", "welcome", "category", "unit", "investment"],
+    "scenes": {
+      "list_summary": [
+        "id",
+        "name",
+        "domain",
+        "sub_domain",
+        "area"
+      ],
+      "match_source": [
+        "id",
+        "name",
+        "domain",
+        "overview",
+        "welcome"
+      ],
+      "match_target": [
+        "id",
+        "name",
+        "domain",
+        "sub_domain",
+        "area",
+        "overview",
+        "welcome",
+        "category",
+        "unit"
+      ],
+      "detail_fields": [
+        "name",
+        "domain",
+        "overview",
+        "welcome"
+      ],
+      "text_fields": [
+        "overview",
+        "welcome"
+      ],
+      "domain_field": "domain",
+      "welcome_field": "welcome",
+      "id_field": "id",
+      "name_field": "name"
+    },
+    "detail_labels": {
+      "name": "应用场景项目名称",
+      "domain": "应用场景所属领域",
+      "overview": "应用场景概述",
+      "welcome": "欢迎合作方向"
+    },
+    "frontend_list": [
+      {
+        "role": "id",
+        "label": "序号",
+        "key": "id"
+      },
+      {
+        "role": "title",
+        "label": "应用场景项目名称",
+        "key": "name"
+      },
+      {
+        "role": "subtitle",
+        "label": "应用场景所属区域",
+        "key": "area"
+      },
+      {
+        "role": "tag",
+        "label": "应用场景所属领域",
+        "key": "domain"
+      }
+    ],
+    "table_label": "场景机会数据列表",
+    "card_source_subtitle": "domain"
+  }
+}

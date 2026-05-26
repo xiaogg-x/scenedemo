@@ -4,6 +4,72 @@
 
 ---
 
+## [v3.2] 2026-05-26 — `_get_tables_meta()` 自适应改造
+
+> 无新 commit（工具辅助重构） | 2 files, +45 −160
+
+### `matcher/schema.py` — 元数据生成自适应化 (−155 +45)
+
+| 函数/变更 | 说明 |
+|---|---|
+| **删除** `_one_field_meta()` | 旧版 11 参数辅助函数，不再需要 |
+| **重写** `_get_tables_meta()` | 从 150+ 行硬编码字段列表改为 ~50 行自适应实现。所有布尔标记（`match`/`text_source`/`domain_source`/`api_list`/`api_detail`/`front_list`/`front_card`）由 `field_mapping.json` 的场景定义自动推导。`type` 从 `id_field` 判断，`label` 从 `detail_labels` 取，`match_role` 自动生成。删除 `description` 字段 |
+| **效果**：换数据集不再需要修改 `schema.py` |
+
+### `static/metadata.html` — 删除「说明」列
+
+| 变更 | 说明 |
+|---|---|
+| 删除 `<th>说明</th>` 表头 | 与 `schema.py` 删除 `description` 同步 |
+| 删除 `${f.description}` 渲染 | 同上 |
+
+---
+
+## [v3.1] 2026-05-25 — schema 重构：字段映射集中管理
+
+> Commit: `e5a4b2c` | 6 files, +540 −120
+
+### `matcher/schema.py` — 新增
+
+| 函数/变更 | 说明 |
+|---|---|
+| **新增** 整个模块 | 字段映射管理核心：`_DEFAULT_MAPPING` 默认映射、`load_mapping()`/`save_mapping()` JSON 读写、`_get_tables_meta()` metadata 页面元数据生成、工具函数（`get_role()`/`build_scene_dict()`/`build_detail_dict()` 等） |
+
+### `后台数据/field_mapping.json` — 新增
+
+| 变更 | 说明 |
+|---|---|
+| **新增** 唯一字段定义源 | `keys`（字段名列表）、`scenes`（场景→字段映射）、`detail_labels`（中文标签）、`frontend_list`（前端渲染配置）。其他所有代码禁止硬编码字段名 |
+
+### `app.py` — 路由扩展
+
+| 函数/变更 | 说明 |
+|---|---|
+| **新增** `GET /api/schema` | 返回前端渲染 schema（字段角色映射） |
+| **新增** `GET /api/mapping` | 获取当前 field_mapping.json 内容 |
+| **新增** `POST /api/mapping` | 更新 field_mapping.json 并持久化 |
+
+### `static/metadata.html` — 新增
+
+| 变更 | 说明 |
+|---|---|
+| **新增** 完整页面 | 字段元数据查看器：两张表的字段一览、参与关系（匹配/文本/领域/列表/详情/卡片）、侧栏统计 |
+
+### `matcher/__init__.py` — 导出更新
+
+| 函数/变更 | 说明 |
+|---|---|
+| **新增导出** `init_mapping` / `get_mapping` / `update_mapping` / `get_schema_json` / `_get_tables_meta` | 供 app.py 和 metadata 页面使用 |
+
+### `static/js/state.js` / `api.js` — 前端适配
+
+| 文件 | 变更 |
+|---|---|
+| `state.js` | 新增 `_schema` / `_mapping` 状态、`getSchema()`/`setSchema()`/`getMapping()`/`setMapping()`/`getCurrentSchema()`/`getListFieldKey()` 等 |
+| `api.js` | 新增 `fetchSchema()` / `fetchMapping()` / `updateMappingAPI()` |
+
+---
+
 ## [v2] 2026-05-25 — 匹配结果详细展示重构
 
 > Commit: `800a739` | 9 files, +795 −185
@@ -207,3 +273,15 @@
 | `requirements.txt` | Flask 依赖 |
 | `start.bat` | Windows 一键启动脚本（检查依赖 + 启动 Flask） |
 | `.gitignore` | 排除 pyc / ~$* 临时文件 / _test* / .workbuddy |
+
+---
+
+## 辅助文档与项目整理
+
+### 2026-05-26
+
+| 文件 | 说明 |
+|---|---|
+| **新增** `HOW_TO_CHANGE_DATASET.md` | 换数据集完整操作指南（5 步流程 + 验证清单 + FAQ）。v3.2 后简化为只需改 `data_loader.py` + `field_mapping.json` 两步 |
+| **更新** `README.md` | 补全结构目录（`schema.py`/`metadata.html`/`field_mapping.json`/`HOW_TO_CHANGE_DATASET.md`）、增补 `/api/schema` 与 `/api/mapping` 接口文档、增加配置持久化说明 |
+| **删除** 临时文件 | 清理 7 个调试用临时 `.txt` 文件（`_t.txt`/`_test_result.txt`/`ability_preview.txt`/`preview.txt`/`test_output.txt`/`domains.txt`/`welcome_samples.txt`） |

@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>数据字段元数据 — 场景匹配系统</title>
+    <style>
+        :root {
+            --bg: #f8fafc;
+            --card-bg: #fff;
+            --text: #1e293b;
+            --text-secondary: #64748b;
+            --border: #e2e8f0;
+            --accent: #3B82F6;
+            --accent-light: #eff6ff;
+            --green: #22C55E;
+            --amber: #F59E0B;
+            --red: #EF4444;
+            --purple: #8B5CF6;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+
+        /* ========== 顶部导航 ========== */
+        .topbar {
+            background: #fff;
+            border-bottom: 1px solid var(--border);
+            padding: 14px 32px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 1px 3px rgba(0,0,0,.04);
+        }
+        .topbar h1 { font-size: 18px; font-weight: 700; }
+        .topbar a.back-link {
+            color: var(--accent);
+            text-decoration: none;
+            font-size: 14px;
+            margin-left: auto;
+        }
+        .topbar .badge {
+            font-size: 11px;
+            padding: 2px 10px;
+            border-radius: 10px;
+            background: var(--accent-light);
+            color: var(--accent);
+            font-weight: 600;
+        }
+
+        /* ========== 主体容器 ========== */
+        .container { max-width: 1400px; margin: 0 auto; padding: 24px 32px; }
+
+        /* ========== 选择器标签页 ========== */
+        .tabs { display: flex; gap: 4px; margin-bottom: 24px; background: #fff; border-radius: 10px; padding: 4px; width: fit-content; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+        .tab-btn {
+            padding: 10px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            background: transparent;
+            color: var(--text-secondary);
+            transition: all .15s;
+        }
+        .tab-btn.active { background: var(--accent); color: #fff; box-shadow: 0 1px 3px rgba(59,130,246,.3); }
+        .tab-btn:hover:not(.active) { color: var(--text); background: var(--accent-light); }
+
+        /* ========== 概览信息卡 ========== */
+        .info-row { display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+        .info-card {
+            flex: 1;
+            min-width: 200px;
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,.03);
+        }
+        .info-card .label { font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
+        .info-card .value { font-size: 16px; font-weight: 700; }
+
+        /* ========== 统计概览条 ========== */
+        .stats-bar {
+            display: flex;
+            gap: 24px;
+            padding: 16px 20px;
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            font-size: 14px;
+        }
+        .stats-bar .stat { display: flex; align-items: center; gap: 6px; }
+        .stats-bar .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+        .stats-bar .dot.match { background: var(--accent); }
+        .stats-bar .dot.text { background: var(--purple); }
+        .stats-bar .dot.domain { background: var(--amber); }
+        .stats-bar .dot.passive { background: #cbd5e1; }
+
+        /* ========== 字段表格 ========== */
+        .table-section { margin-bottom: 32px; }
+        .table-section h2 {
+            font-size: 16px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .table-section h2 .emoji { font-size: 18px; }
+        .table-wrap {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0,0,0,.03);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        thead { background: #f1f5f9; }
+        th {
+            padding: 10px 12px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 12px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: .3px;
+            border-bottom: 2px solid var(--border);
+            white-space: nowrap;
+        }
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+            vertical-align: top;
+        }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: #f8fafc; }
+
+        /* 标签徽章 */
+        .tag {
+            display: inline-block;
+            padding: 1px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        .tag-yes { background: #dcfce7; color: #16a34a; }
+        .tag-no { background: #f1f5f9; color: #94a3b8; }
+        .tag-core { background: #dbeafe; color: var(--accent); }
+        .tag-text { background: #ede9fe; color: var(--purple); }
+        .tag-domain { background: #fef3c7; color: #d97706; }
+        .tag-list { background: #e0f2fe; color: #0284c7; }
+        .tag-card { background: #ffe4e6; color: #e11d48; }
+        .tag-api { background: #ccfbf1; color: #0d9488; }
+
+        .field-key {
+            font-family: "Fira Code", "SF Mono", "Consolas", monospace;
+            font-size: 12px;
+            color: var(--accent);
+            font-weight: 600;
+        }
+        .field-label {
+            display: block;
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+
+        /* ========== 算法说明区 ========== */
+        .logic-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 1px 3px rgba(0,0,0,.03);
+        }
+        .logic-card h2 { font-size: 16px; margin-bottom: 12px; }
+        .logic-card pre {
+            background: #f8fafc;
+            padding: 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            line-height: 1.7;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            font-family: inherit;
+        }
+
+        /* ========== 领域映射表 ========== */
+        .map-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            gap: 8px;
+        }
+        .map-item {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 14px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 13px;
+        }
+        .map-item .raw { color: var(--text-secondary); font-size: 12px; }
+        .map-item .arrow { color: var(--accent); font-weight: 700; }
+        .map-item .norm { font-weight: 600; }
+
+        /* ========== 隐藏区 ========== */
+        .hidden { display: none; }
+
+        /* ========== 响应式 ========== */
+        @media (max-width: 768px) {
+            .container { padding: 16px; }
+            .topbar { padding: 12px 16px; }
+            .info-row { flex-direction: column; }
+            .table-wrap { overflow-x: auto; }
+            table { min-width: 900px; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ========== 顶部导航 ========== -->
+    <header class="topbar">
+        <h1>📋 数据字段元数据</h1>
+        <span class="badge">真实数据切换参考</span>
+        <a href="/" class="back-link">← 返回匹配系统</a>
+    </header>
+
+    <div class="container">
+
+        <!-- ========== 标签页切换 ========== -->
+        <div class="tabs" id="tab-buttons">
+            <button class="tab-btn active" data-tab="ability">场景能力表</button>
+            <button class="tab-btn" data-tab="opportunity">场景机会表</button>
+            <button class="tab-btn" data-tab="logic">匹配算法</button>
+            <button class="tab-btn" data-tab="domain-map">领域映射表</button>
+        </div>
+
+        <!-- ========== 能力表概览 ========== -->
+        <div id="tab-ability" class="tab-content">
+            <div class="info-row" id="ability-info"></div>
+            <div class="stats-bar" id="ability-stats"></div>
+            <div class="table-section">
+                <h2><span class="emoji">📊</span> 字段明细</h2>
+                <div class="table-wrap" id="ability-table"></div>
+            </div>
+        </div>
+
+        <!-- ========== 机会表概览 ========== -->
+        <div id="tab-opportunity" class="tab-content hidden">
+            <div class="info-row" id="opportunity-info"></div>
+            <div class="stats-bar" id="opportunity-stats"></div>
+            <div class="table-section">
+                <h2><span class="emoji">📊</span> 字段明细</h2>
+                <div class="table-wrap" id="opportunity-table"></div>
+            </div>
+        </div>
+
+        <!-- ========== 匹配算法说明 ========== -->
+        <div id="tab-logic" class="tab-content hidden">
+            <div class="logic-card" id="logic-content"></div>
+            <div class="logic-card">
+                <h2>⚙ 匹配参数配置</h2>
+                <div class="table-wrap" id="config-table"></div>
+            </div>
+        </div>
+
+        <!-- ========== 领域映射表 ========== -->
+        <div id="tab-domain-map" class="tab-content hidden">
+            <div class="logic-card">
+                <h2>🗺 领域归一化映射表 (normalizer.py DOMAIN_MAP)</h2>
+                <div class="map-grid" id="domain-map-grid"></div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // ================================================================
+        // 数据加载 & 渲染
+        // ================================================================
+        let _schemaData = null;
+
+        async function load() {
+            try {
+                const res = await fetch('/api/schema');
+                _schemaData = await res.json();
+                renderAll();
+                bindTabs();
+            } catch (err) {
+                document.querySelector('.container').innerHTML =
+                    '<div style="padding:40px;text-align:center;color:#ef4444;">加载失败：' + err.message + '</div>';
+            }
+        }
+
+        function renderAll() {
+            if (!_schemaData) return;
+            const [ability, opportunity] = _schemaData.tables;
+            renderTable(ability, 'ability');
+            renderTable(opportunity, 'opportunity');
+            renderInfoCards(ability, 'ability-info');
+            renderInfoCards(opportunity, 'opportunity-info');
+            renderStatsBar(ability, 'ability-stats');
+            renderStatsBar(opportunity, 'opportunity-stats');
+            renderLogic(_schemaData);
+            renderConfigTable(_schemaData);
+            renderDomainMap(_schemaData);
+        }
+
+        // ========== 信息卡片 ==========
+        function renderInfoCards(schema, containerId) {
+            const el = document.getElementById(containerId);
+            const fields = schema.fields || [];
+            const matchFields = fields.filter(f => f.match);
+            const textFields = fields.filter(f => f.text_source);
+            const domainFields = fields.filter(f => f.domain_source);
+            el.innerHTML = `
+                <div class="info-card">
+                    <div class="label">表名</div>
+                    <div class="value">${schema.table_name}</div>
+                </div>
+                <div class="info-card">
+                    <div class="label">内部标识</div>
+                    <div class="value"><span class="field-key">${schema.table_key}</span></div>
+                </div>
+                <div class="info-card">
+                    <div class="label">当前数据源</div>
+                    <div class="value" style="font-size:13px;">${schema.excel_sheet || schema.source_desc}</div>
+                </div>
+                <div class="info-card">
+                    <div class="label">字段总数</div>
+                    <div class="value">${fields.length} 个</div>
+                </div>
+                <div class="info-card">
+                    <div class="label">参与匹配</div>
+                    <div class="value" style="color:var(--accent);">${matchFields.length} 个</div>
+                </div>
+                <div class="info-card">
+                    <div class="label">文本来源</div>
+                    <div class="value" style="color:var(--purple);">${textFields.length} 个</div>
+                </div>
+                <div class="info-card">
+                    <div class="label">领域来源</div>
+                    <div class="value" style="color:var(--amber);">${domainFields.length} 个</div>
+                </div>
+            `;
+        }
+
+        // ========== 统计概览条 ==========
+        function renderStatsBar(schema, containerId) {
+            const fields = schema.fields || [];
+            const matchCount = fields.filter(f => f.match).length;
+            const textCount = fields.filter(f => f.text_source).length;
+            const domainCount = fields.filter(f => f.domain_source).length;
+            const passiveCount = fields.length - matchCount;
+            document.getElementById(containerId).innerHTML = `
+                <span class="stat"><span class="dot match"></span> 参与匹配：<strong>${matchCount}</strong></span>
+                <span class="stat"><span class="dot text"></span> 文本来源：<strong>${textCount}</strong></span>
+                <span class="stat"><span class="dot domain"></span> 领域来源：<strong>${domainCount}</strong></span>
+                <span class="stat"><span class="dot passive"></span> 仅展示/透传：<strong>${passiveCount}</strong></span>
+            `;
+        }
+
+        // ========== 字段表格 ==========
+        function renderTable(schema, prefix) {
+            const el = document.getElementById(prefix + '-table');
+            const fields = schema.fields || [];
+
+            let rows = '';
+            fields.forEach(f => {
+                const tags = [];
+                if (f.match) {
+                    if (f.text_source && f.domain_source) tags.push('<span class="tag tag-core">匹配核心</span>');
+                    else if (f.text_source) tags.push('<span class="tag tag-text">文本</span>');
+                    else if (f.domain_source) tags.push('<span class="tag tag-domain">领域</span>');
+                    else tags.push('<span class="tag tag-yes">匹配</span>');
+                } else {
+                    tags.push('<span class="tag tag-no">仅展示</span>');
+                }
+
+                if (f.api_list) tags.push('<span class="tag tag-api">列表API</span>');
+                if (f.front_list) tags.push('<span class="tag tag-list">前端列表</span>');
+                if (f.front_card) tags.push('<span class="tag tag-card">前端卡片</span>');
+
+                const frontUse = [
+                    f.front_list ? 'renderList()' : null,
+                    f.front_card ? 'renderCards()' : null,
+                ].filter(Boolean).join(', ') || '—';
+
+                rows += `
+                    <tr>
+                        <td><span class="field-key">${f.key}</span></td>
+                        <td>${f.label}</td>
+                        <td><span class="tag tag-no" style="background:#f1f5f9;color:#64748b;">${f.type}</span></td>
+                        <td>${tags.join(' ')}</td>
+                        <td style="font-size:12px;">${f.match_role || '—'}</td>
+                        <td style="font-size:12px;">${frontUse}</td>
+                    </tr>
+                `;
+            });
+
+            el.innerHTML = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>字段 Key</th>
+                            <th>中文名</th>
+                            <th>类型</th>
+                            <th>角色</th>
+                            <th>匹配中的用途</th>
+                            <th>前端渲染位置</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            `;
+        }
+
+        // ========== 匹配算法说明 ==========
+        function renderLogic(data) {
+            document.getElementById('logic-content').innerHTML = `
+                <h2>🧠 匹配算法</h2>
+                <pre>${data.match_logic}</pre>
+            `;
+        }
+
+        // ========== 配置参数表 ==========
+        function renderConfigTable(data) {
+            const config = data.match_config;
+            let rows = '';
+            (config.fields || []).forEach(f => {
+                rows += `
+                    <tr>
+                        <td><span class="field-key">${f.key}</span></td>
+                        <td>${f.label}</td>
+                        <td>${f.type}</td>
+                        <td>${f.default}</td>
+                        <td>${f.range}</td>
+                        <td style="font-size:12px;">${f.note}</td>
+                    </tr>
+                `;
+            });
+            document.getElementById('config-table').innerHTML = `
+                <table>
+                    <thead>
+                        <tr><th>参数 Key</th><th>名称</th><th>类型</th><th>默认值</th><th>范围</th><th>说明</th></tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            `;
+        }
+
+        // ========== 领域映射表 ==========
+        function renderDomainMap(data) {
+            const entries = data.domain_map.entries || [];
+            const grid = document.getElementById('domain-map-grid');
+            grid.innerHTML = entries.map(e => `
+                <div class="map-item">
+                    <span class="raw">${e.raw}</span>
+                    <span class="arrow">→</span>
+                    <span class="norm">${e.normalized}</span>
+                </div>
+            `).join('');
+        }
+
+        // ========== 标签页切换 ==========
+        function bindTabs() {
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+                    const target = document.getElementById('tab-' + btn.dataset.tab);
+                    if (target) target.classList.remove('hidden');
+                });
+            });
+        }
+
+        // ========== 启动 ==========
+        load();
+    </script>
+
+</body>
+</html>

@@ -102,3 +102,50 @@ async function updateConfigAPI(newConfig) {
     }
     return await res.json();
 }
+
+
+/**
+ * 获取字段元数据（前端渲染 schema）。
+ * 包含每张表的 list_fields（title/subtitle/tag 各用哪个字段）、表名等。
+ *
+ * 返回格式：
+ *   { frontend: { ability: {...}, opportunity: {...} }, mapping: {...}, ... }
+ */
+async function fetchSchema() {
+    const res = await fetch(`${BASE_URL}/api/schema`);
+    if (!res.ok) throw new Error(`获取字段元数据失败: ${res.status}`);
+    return await res.json();
+}
+
+
+/**
+ * 获取场景→字段映射（可编辑的完整映射配置）。
+ *
+ * 返回格式：
+ *   { ability: { keys: {...}, scenes: {...}, ... }, opportunity: { ... } }
+ */
+async function fetchMapping() {
+    const res = await fetch(`${BASE_URL}/api/mapping`);
+    if (!res.ok) throw new Error(`获取字段映射失败: ${res.status}`);
+    return await res.json();
+}
+
+
+/**
+ * 更新场景→字段映射并持久化。
+ *
+ * 参数:
+ *   newMapping (object): 完整映射对象
+ */
+async function updateMappingAPI(newMapping) {
+    const res = await fetch(`${BASE_URL}/api/mapping`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newMapping),
+    });
+    if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || `更新映射失败: ${res.status}`);
+    }
+    return await res.json();
+}

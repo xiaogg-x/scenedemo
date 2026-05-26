@@ -29,6 +29,8 @@ const State = (function () {
     let _opportunities  = [];              // 全部场景机会列表（缓存）
     let _config         = null;            // 当前匹配参数配置（从后端 /api/config 获取或匹配结果携带）
     let _configBackup   = null;            // 配置备份（用于「取消」时恢复）
+    let _schema         = null;            // 字段元数据（前端渲染 schema，从 /api/schema 获取）
+    let _mapping        = null;            // 场景→字段映射（从 /api/mapping 获取，可编辑）
 
     // ====================================================================
     // 公开接口
@@ -123,6 +125,58 @@ const State = (function () {
          */
         setConfigBackup(cfg) {
             _configBackup = cfg ? JSON.parse(JSON.stringify(cfg)) : null;
+        },
+
+        /** 获取字段元数据（前端渲染 schema） */
+        getSchema() {
+            return _schema;
+        },
+
+        /** 设置字段元数据 */
+        setSchema(schema) {
+            _schema = schema;
+        },
+
+        /** 获取场景→字段映射 */
+        getMapping() {
+            return _mapping;
+        },
+
+        /** 设置场景→字段映射 */
+        setMapping(mapping) {
+            _mapping = mapping;
+        },
+
+        /** 获取当前模式对应的 card_source_subtitle 字段角色名 */
+        getCardSourceSubtitleRole() {
+            const s = this.getCurrentSchema();
+            return (s && s.card_source_subtitle) || (this.getMode() === 'ability' ? 'company' : 'domain');
+        },
+
+        /**
+         * 获取当前模式对应的前端渲染 schema。
+         * 返回 { list_fields, table_label, card_source_subtitle } 或 null。
+         *
+         * @returns {object|null}
+         */
+        getCurrentSchema() {
+            if (!_schema || !_schema.frontend) return null;
+            return _currentMode === 'ability'
+                ? _schema.frontend.ability
+                : _schema.frontend.opportunity;
+        },
+
+        /**
+         * 根据 role 在当前 schema 的 list_fields 中查找字段 key。
+         *
+         * @param {string} role - 'id' | 'title' | 'subtitle' | 'tag'
+         * @returns {string|null} 字段 key，找不到返回 null
+         */
+        getListFieldKey(role) {
+            const s = this.getCurrentSchema();
+            if (!s || !s.list_fields) return null;
+            const f = s.list_fields.find(lf => lf.role === role);
+            return f ? f.key : null;
         }
     };
 })();
