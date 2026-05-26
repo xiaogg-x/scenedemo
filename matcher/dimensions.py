@@ -27,13 +27,16 @@ dimensions.py —— 匹配维度注册表（文件持久化版）
   }
 
 匹配方法注册表 METHOD_REGISTRY：
-  "string_match"  → 精确子串 + 大类归一化（_score_string_match）
-  "bigram"        → 中文 2-gram Jaccard 相似度（_score_text）
+  "string_match"    → 精确子串 + 大类归一化（_score_string_match）
+  "bigram"          → 中文 2-gram Jaccard 相似度（_score_text）
+  "vector_semantic" → 语义向量嵌入 + 余弦相似度（_make_vector_adapter）
 """
 
 import re
 import json
 import os
+
+import numpy as np
 
 from .normalizer import normalize_domain
 
@@ -238,6 +241,70 @@ def _make_bigram_adapter(dim_def):
     return compute
 
 
+def _make_vector_adapter(dim_def):
+    """
+    为 vector_semantic 方法构建 compute 闭包。
+
+    将用户选的能力侧/机会侧字段值拼成文本，用语义嵌入模型转为归一化向量，
+    再以点积（等价于余弦相似度）计算语义相似度得分。
+
+    参数（params）：
+      - model_name (str):  嵌入模型名，如 'BAAI/bge-small-zh-v1.5'
+      - threshold  (float): 最低相似度阈值，低于此值的匹配直接得 0 分
+
+    闭包签名：compute(a_vals, o_vals, params) → (score, detail)
+      - 返回的 detail 字典含 similarity、threshold、text_snippet、reason 字段
+    """
+    from .vector_tool import encode  # 懒 import，避免 torch 在启动时被导入
+
+    def compute(a_vals, o_vals, params):
+        # 读取维度私有参数（防御 json null → Python None 的情况）
+        model_name = params.get('model_name') or 'BAAI/bge-small-zh-v1.5'
+        threshold  = float(params.get('threshold', 0.0))
+
+        # 将多字段值拼成一段文本（中间用空格分隔）
+        text_a = ' '.join(str(v) for v in a_vals if v).strip()
+        text_b = ' '.join(str(v) for v in o_vals if v).strip()
+
+        # 任一文本为空 → 无法计算语义相似度
+        if not text_a or not text_b:
+            return 0.0, {
+                'similarity': 0.0,
+                'threshold': threshold,
+                'text_a_snippet': text_a[:100] + ('...' if len(text_a) > 100 else ''),
+                'text_b_snippet': text_b[:100] + ('...' if len(text_b) > 100 else ''),
+                'reason': '一侧或多侧字段值为空，无法计算语义相似度',
+            }
+
+        # 调用共享向量工具层：文本 → 归一化向量
+        vec_a = encode(model_name, text_a)
+        vec_b = encode(model_name, text_b)
+
+        # 向量已 L2 归一化，点积 = 余弦相似度，范围理论上 [-1, 1]
+        # 实际中语义嵌入模型的相似度通常 ≥ 0
+        sim = round(float(np.dot(vec_a, vec_b)), 4)
+
+        # 构建详情
+        detail = {
+            'similarity': sim,
+            'threshold': threshold,
+            'text_a_snippet': text_a[:100] + ('...' if len(text_a) > 100 else ''),
+            'text_b_snippet': text_b[:100] + ('...' if len(text_b) > 100 else ''),
+        }
+
+        # 低于阈值 → 按 0 分处理
+        if sim < threshold:
+            detail['reason'] = (
+                f'余弦相似度 {sim:.3f} 低于最低阈值 {threshold}，按 0 分处理'
+            )
+            return 0.0, detail
+
+        detail['reason'] = f'余弦相似度 = {sim:.3f}'
+        return max(0.0, sim), detail  # 负数截断为 0
+
+    return compute
+
+
 # 方法注册表（新增匹配方法在此添加条目）
 METHOD_REGISTRY = {
     'string_match': {
@@ -265,6 +332,36 @@ METHOD_REGISTRY = {
         },
         'default_icon': '📐',
         'default_color': '#22C55E',
+    },
+    'vector_semantic': {
+        'build_compute': _make_vector_adapter,
+        'default_detail_type': 'vector',
+        'default_params': {
+            'model_name': {
+                'default': 'BAAI/bge-small-zh-v1.5',
+                'label': '嵌入模型',
+                'hint': '文本→向量的语义模型。'
+                        'small=95MB/快速, large=326MB/精准。'
+                        '首次使用自动下载。',
+                'type': 'select',
+                'options': [
+                    'BAAI/bge-small-zh-v1.5',
+                    'BAAI/bge-large-zh-v1.5',
+                ],
+            },
+            'threshold': {
+                'default': 0.0,
+                'label': '最低相似度阈值',
+                'hint': '低于此值的匹配直接得 0 分。'
+                        '0.0 表示不过滤。',
+                'type': 'float',
+                'min': 0.0,
+                'max': 1.0,
+                'step': 0.05,
+            },
+        },
+        'default_icon': '🧠',
+        'default_color': '#8B5CF6',
     },
 }
 

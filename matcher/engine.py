@@ -216,7 +216,11 @@ def _compute_dimension_scores(ability, opp):
         dim_params = {}
         for pk, pv in dim.get('params', {}).items():
             config_key = f"{dim_id}_{pk}"
-            dim_params[pk] = MATCH_CONFIG.get(config_key, pv['default'])
+            # 注意：json 中的 null 会被 Python 解析为 None，
+            # dict.get(key, default) 在 key 存在但值为 None 时不会用 default，
+            # 所以需要显式判断 None 后回退到默认值
+            val = MATCH_CONFIG.get(config_key)
+            dim_params[pk] = val if val is not None else pv['default']
 
         # 步骤 3：调用 compute 闭包 → (score, detail)
         # compute 闭包由 METHOD_REGISTRY[method]['build_compute'](dim_def) 构建

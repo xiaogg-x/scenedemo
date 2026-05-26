@@ -56,20 +56,31 @@ scenedemo/
 
 ### 环境要求
 
-- Python 3.7+
-- pip
+- Python 3.10+（Conda 管理虚拟环境）
+- conda
 
 ### 安装与运行
 
+#### 方式一：一键启动（推荐）
+
+双击 `start.bat`，脚本会自动检查/创建 conda 虚拟环境 `scenedemo` 并安装依赖后启动。
+
+#### 方式二：手动启动
+
 ```bash
-# 安装依赖
-pip install -r requirements.txt
+# 创建并激活 conda 虚拟环境
+conda create -n scenedemo python=3.10 -y
+conda activate scenedemo
+
+# 安装 PyTorch（CPU 版）
+conda install pytorch cpuonly -c pytorch -y
+
+# 安装其他依赖
+pip install flask sentence-transformers
 
 # 启动服务
 python app.py
 ```
-
-或双击 `start.bat`（Windows 一键启动）。
 
 启动后访问 **http://127.0.0.1:5000**。
 

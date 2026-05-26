@@ -317,6 +317,30 @@ function renderCards(data) {
                 } else {
                     html += '<div class="bigram-tags"><span class="bigram-tags-empty">无重叠关键词</span></div>';
                 }
+            } else if (dim.detail_type === 'vector') {
+                // 语义向量匹配详情
+                const vd = (typeof ds.detail === 'object' && ds.detail) ? ds.detail : {};
+                const simPct = ((vd.similarity || 0) * 100).toFixed(1);
+                const thresholdPct = ((vd.threshold || 0) * 100).toFixed(0);
+
+                html += `
+                <div class="text-stats">
+                    <div class="text-stat">
+                        <span class="text-stat-label">余弦相似度</span>
+                        <span class="text-stat-val">${simPct}%</span>
+                    </div>
+                    <div class="text-stat">
+                        <span class="text-stat-label">最低阈值</span>
+                        <span class="text-stat-val">${thresholdPct}%</span>
+                    </div>
+                </div>
+                <div class="text-snippets">
+                    <div class="text-snippet-label">能力侧文本：</div>
+                    <div class="text-snippet-val">${vd.text_a_snippet || '--'}</div>
+                    <div class="text-snippet-label">机会侧文本：</div>
+                    <div class="text-snippet-val">${vd.text_b_snippet || '--'}</div>
+                </div>
+                <div class="card-detail-text">${nl2br(vd.reason || '无匹配信息')}</div>`;
             } else {
                 // 文本/区域等通用文本详情
                 html += `<div class="card-detail-text">${nl2br(ds.detail || '无匹配信息')}</div>`;

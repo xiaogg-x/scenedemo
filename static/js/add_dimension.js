@@ -102,6 +102,31 @@
                            class="config-number-input"
                            value="300" min="50" max="2000" step="10">
                 </div>`;
+        } else if (method === 'vector_semantic') {
+            container.innerHTML = `
+                <div class="config-section">
+                    <div class="config-label">嵌入模型</div>
+                    <select id="add-dim-vec-model" class="config-select">
+                        <option value="BAAI/bge-small-zh-v1.5">
+                            bge-small-zh (95MB · 快速)
+                        </option>
+                        <option value="BAAI/bge-large-zh-v1.5">
+                            bge-large-zh (326MB · 精准)
+                        </option>
+                    </select>
+                    <div class="config-hint" style="font-size:11px;color:#94a3b8;margin-top:4px;">
+                        模型首次使用时自动从 HuggingFace 下载。
+                    </div>
+                </div>
+                <div class="config-section">
+                    <div class="config-label">最低相似度阈值</div>
+                    <input type="number" id="add-dim-vec-threshold"
+                           class="config-number-input"
+                           value="0.0" min="0" max="1" step="0.05">
+                    <div class="config-hint" style="font-size:11px;color:#94a3b8;margin-top:4px;">
+                        低于此值的匹配结果直接得 0 分。0.0 表示不过滤。
+                    </div>
+                </div>`;
         }
     }
 

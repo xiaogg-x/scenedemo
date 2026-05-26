@@ -1,1 +1,15 @@
+# ============================================================
+# 本项目使用 conda 虚拟环境 (scenedemo)，分为两步安装：
+#
+#   Step 1 - conda（PyTorch，自带 VC++ 运行时）:
+#     conda install pytorch cpuonly -c pytorch -y
+#
+#   Step 2 - pip（Flask + 语义向量 + Excel 读取）:
+#     pip install flask sentence-transformers pandas openpyxl
+#
+# 或直接双击 start.bat 一键完成。
+# ============================================================
 flask
+sentence-transformers
+pandas
+openpyxl

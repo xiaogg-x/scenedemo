@@ -32,6 +32,7 @@ from .engine import (
     load_config_from_file,
     sync_config_with_dimensions,
 )
+from .vector_tool import pre_warm_cache
 
 
 __all__ = [
@@ -60,4 +61,6 @@ __all__ = [
     'update_config',
     'load_config_from_file',
     'sync_config_with_dimensions',
+    # 向量预热
+    'pre_warm_cache',
 ]

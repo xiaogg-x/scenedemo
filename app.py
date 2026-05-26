@@ -44,6 +44,7 @@ from matcher import (
     sync_config_with_dimensions,
     METHOD_REGISTRY,
     get_next_dim_id,
+    pre_warm_cache,
 )
 
 
@@ -85,6 +86,16 @@ print(f'  数据加载完成：{len(ALL_ABILITIES)} 条能力，{len(ALL_OPPORTU
 print('=' * 60)
 
 load_config_from_file()
+
+# 预热向量语义缓存——对 vector_semantic 维度引用的所有文本批量编码，
+# 避免首次匹配请求因逐个编码 1000+ 条文本而超时（54s → <1s）
+print('=' * 60)
+print('  正在预热向量语义缓存...')
+print('=' * 60)
+pre_warm_cache(ALL_ABILITIES, ALL_OPPORTUNITIES)
+print('=' * 60)
+print('  缓存预热完成，准备接受请求')
+print('=' * 60)
 
 
 # ============================================================================
@@ -434,4 +445,4 @@ if __name__ == '__main__':
     print(f'  访问地址: http://127.0.0.1:5000')
     print('  API 文档: http://127.0.0.1:5000/api/config')
     print('=' * 60)
-    app.run(host='127.0.0.1', port=5000, debug=True)
+    app.run(host='127.0.0.1', port=5000, debug=True, use_reloader=False)
