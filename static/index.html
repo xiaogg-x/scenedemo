@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>场景机会与能力匹配 Demo</title>
     <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/add_dimension.css">
 </head>
 <body>
 
@@ -90,40 +91,9 @@
                     <div class="config-hint" id="strategy-hint">当前：自由调整，保存时若权重之和≠100% 将自动等比例缩放。</div>
                 </div>
 
-                <!-- 领域权重 -->
-                <div class="config-section">
-                    <div class="config-label">
-                        领域权重（domain_weight）
-                        <span class="config-value-display" id="dw-display">40.0%</span>
-                    </div>
-                    <input type="range" id="slider-domain-weight"
-                           class="config-slider" min="0" max="1000" value="400"
-                           step="1">
-                    <div class="slider-labels"><span>0%</span><span>50%</span><span>100%</span></div>
-                </div>
-
-                <!-- 文本权重 -->
-                <div class="config-section">
-                    <div class="config-label">
-                        文本权重（text_weight）
-                        <span class="config-value-display" id="tw-display">30.0%</span>
-                    </div>
-                    <input type="range" id="slider-text-weight"
-                           class="config-slider" min="0" max="1000" value="300"
-                           step="1">
-                    <div class="slider-labels"><span>0%</span><span>50%</span><span>100%</span></div>
-                </div>
-
-                <!-- 区域权重 -->
-                <div class="config-section">
-                    <div class="config-label">
-                        区域权重（region_weight）
-                        <span class="config-value-display" id="rw-display">30.0%</span>
-                    </div>
-                    <input type="range" id="slider-region-weight"
-                           class="config-slider" min="0" max="1000" value="300"
-                           step="1">
-                    <div class="slider-labels"><span>0%</span><span>50%</span><span>100%</span></div>
+                <!-- 权重滑块容器（v3：动态生成，由 render.js 填充） -->
+                <div id="config-weight-sliders">
+                    <!-- JS 根据 /api/dimensions 动态生成各维度滑块 -->
                 </div>
 
                 <!-- 权重和提示 -->
@@ -142,14 +112,9 @@
                     </div>
                 </div>
 
-                <!-- 文本截取长度 -->
-                <div class="config-section">
-                    <div class="config-label">文本截取长度（text_max_length）</div>
-                    <div class="config-input-row">
-                        <input type="range" id="slider-text-len" class="config-slider config-slider-short" min="50" max="2000" value="300" step="10">
-                        <input type="number" id="input-text-len" class="config-number-input" min="50" max="2000" value="300" step="10">
-                    </div>
-                    <div class="config-hint">文本匹配时截取前 N 个中文字符，避免超长文本稀释相似度。</div>
+                <!-- 维度私有参数容器（v3：动态生成，由 render.js 根据维度 params 填充） -->
+                <div id="config-dim-params">
+                    <!-- JS 根据 /api/dimensions 动态生成 text_max_length 等参数控件 -->
                 </div>
             </div>
 
@@ -164,11 +129,59 @@
     </div>
 
     <!-- ================================================================ -->
+    <!-- 添加匹配维度模态框                                                   -->
+    <!-- ================================================================ -->
+    <div id="add-dim-overlay" class="config-overlay" style="display:none;">
+        <div class="config-modal" style="max-width:540px;">
+            <div class="config-modal-header">
+                <span class="config-modal-title">➕ 添加匹配维度</span>
+                <button id="add-dim-close-x" class="config-close-x" title="关闭">&times;</button>
+            </div>
+            <div class="config-modal-body" id="add-dim-body">
+                <div class="config-section">
+                    <div class="config-label">维度名称 *</div>
+                    <input type="text" id="add-dim-label" class="config-text-input" placeholder="如：投资匹配">
+                </div>
+                <div class="config-section">
+                    <div class="config-label">匹配方法 *</div>
+                    <select id="add-dim-method" class="config-select">
+                        <option value="">-- 请选择 --</option>
+                    </select>
+                </div>
+                <div class="config-section">
+                    <div class="config-label">能力侧字段 *</div>
+                    <select id="add-dim-ability-field" class="config-select">
+                        <option value="">-- 请选择 --</option>
+                    </select>
+                </div>
+                <div class="config-section">
+                    <div class="config-label">机会侧字段 *</div>
+                    <select id="add-dim-opp-field" class="config-select">
+                        <option value="">-- 请选择 --</option>
+                    </select>
+                </div>
+                <div class="config-section">
+                    <div class="config-label">图标（Emoji，可选）</div>
+                    <input type="text" id="add-dim-icon" class="config-text-input" placeholder="如：🔍（留空则使用默认值）">
+                </div>
+                <div class="config-section" id="add-dim-method-params">
+                    <!-- 方法特定参数动态生成 -->
+                </div>
+            </div>
+            <div class="config-modal-footer">
+                <button id="add-dim-cancel" class="config-btn config-btn-secondary">取消</button>
+                <button id="add-dim-save" class="config-btn config-btn-primary">添加</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================================================================ -->
     <!-- JS 模块引用（按依赖顺序加载）                                    -->
     <!-- ================================================================ -->
     <script src="/js/state.js"></script>
     <script src="/js/api.js"></script>
     <script src="/js/render.js"></script>
+    <script src="/js/add_dimension.js"></script>
     <script src="/js/main.js"></script>
 
 </body>

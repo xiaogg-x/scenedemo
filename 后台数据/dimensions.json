@@ -1,0 +1,128 @@
+[
+  {
+    "id": "domain",
+    "label": "领域匹配",
+    "weight_key": "domain_weight",
+    "ability_fields": [
+      "domain"
+    ],
+    "opportunity_fields": [
+      "welcome"
+    ],
+    "method": "string_match",
+    "method_labels": {
+      "ability": "能力领域",
+      "opportunity": "欢迎合作方向"
+    },
+    "default_weight": 0.4,
+    "detail_type": "text",
+    "icon": "🔍",
+    "score_label": "领域",
+    "color": "#3B82F6",
+    "params": {}
+  },
+  {
+    "id": "text",
+    "label": "文本匹配",
+    "weight_key": "text_weight",
+    "ability_fields": [
+      "overview",
+      "target_customer"
+    ],
+    "opportunity_fields": [
+      "overview",
+      "welcome"
+    ],
+    "method": "bigram",
+    "default_weight": 0.3,
+    "detail_type": "bigram",
+    "icon": "📐",
+    "score_label": "文本",
+    "color": "#22C55E",
+    "params": {
+      "max_length": {
+        "default": 300,
+        "label": "文本截取长度",
+        "hint": "文本匹配时截取前 N 个中文字符，避免超长文本稀释相似度。",
+        "type": "int",
+        "min": 50,
+        "max": 2000,
+        "step": 10,
+        "slider_max": 2000
+      }
+    }
+  },
+  {
+    "id": "region",
+    "label": "区域匹配",
+    "weight_key": "region_weight",
+    "ability_fields": [
+      "district"
+    ],
+    "opportunity_fields": [
+      "area"
+    ],
+    "method": "string_match",
+    "method_labels": {
+      "ability": "能力所属区",
+      "opportunity": "机会所属区域"
+    },
+    "default_weight": 0.3,
+    "detail_type": "text",
+    "icon": "📍",
+    "score_label": "区域",
+    "color": "#F59E0B",
+    "params": {}
+  },
+  {
+    "label": "新增匹配",
+    "method": "bigram",
+    "ability_fields": [
+      "district"
+    ],
+    "opportunity_fields": [
+      "area"
+    ],
+    "id": "dim_1",
+    "weight_key": "dim_1_weight",
+    "detail_type": "bigram",
+    "icon": "📐",
+    "color": "#22C55E",
+    "default_weight": 0.0,
+    "score_label": "新增匹配",
+    "params": {
+      "max_length": {
+        "default": 300,
+        "label": "文本截取长度",
+        "hint": "文本匹配时截取前 N 个中文字符，避免超长文本稀释相似度。",
+        "type": "int",
+        "min": 50,
+        "max": 2000,
+        "step": 10,
+        "slider_max": 2000
+      }
+    }
+  },
+  {
+    "label": "又新增匹配",
+    "method": "string_match",
+    "ability_fields": [
+      "district"
+    ],
+    "opportunity_fields": [
+      "area"
+    ],
+    "method_labels": {
+      "ability": "111",
+      "opportunity": "222"
+    },
+    "id": "dim_2",
+    "weight_key": "dim_2_weight",
+    "detail_type": "text",
+    "icon": "🔍",
+    "color": "#3B82F6",
+    "default_weight": 0.0,
+    "score_label": "又新增匹配",
+    "params": {}
+  }
+]

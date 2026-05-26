@@ -1,8 +1,8 @@
 /**
- * state.js —— 全局状态管理模块 (v2)
+ * state.js —— 全局状态管理模块 (v3)
  *
  * 职责：维护前端页面的全部运行时状态，对外暴露 getter/setter 接口。
- * v2 新增：当前匹配参数配置（config）状态。
+ * v3 新增：维度元信息（dimensions）状态，替代硬编码的 DEFAULT_CONFIG。
  * 所有 DOM 渲染函数和事件处理函数都通过 state.js 读取/更新状态。
  */
 
@@ -10,7 +10,7 @@ const State = (function () {
     'use strict';
 
     // ====================================================================
-    // 默认配置常量（与后端 engine.py 中的 MATCH_CONFIG 保持一致）
+    // 默认配置常量（当维度 API 未加载时使用）
     // ====================================================================
     const DEFAULT_CONFIG = {
         domain_weight:   0.4,
@@ -24,106 +24,86 @@ const State = (function () {
     // 内部状态变量
     // ====================================================================
 
-    let _currentMode    = 'ability';      // 当前模式：'ability'（能力→机会） 或 'opportunity'（机会→能力）
-    let _selectedId     = null;            // 当前选中项的 ID
-    let _abilities      = [];              // 全部场景能力列表（缓存）
-    let _opportunities  = [];              // 全部场景机会列表（缓存）
-    let _config         = null;            // 当前匹配参数配置（从后端 /api/config 获取或匹配结果携带）
-    let _configBackup   = null;            // 配置备份（用于「取消」时恢复）
+    let _currentMode    = 'ability';
+    let _selectedId     = null;
+    let _abilities      = [];
+    let _opportunities  = [];
+    let _config         = null;
+    let _configBackup   = null;
+    let _dimensions     = null;  // v3: 维度元信息列表 [{id, label, weight, ...}, ...]
 
     // ====================================================================
     // 公开接口
     // ====================================================================
 
     return {
-        /** 获取当前模式 */
-        getMode() {
-            return _currentMode;
-        },
+        getMode() { return _currentMode; },
+        setMode(mode) { _currentMode = mode; },
 
-        /** 设置当前模式 */
-        setMode(mode) {
-            _currentMode = mode;
-        },
+        getSelectedId() { return _selectedId; },
+        setSelectedId(id) { _selectedId = id; },
 
-        /** 获取当前选中 ID */
-        getSelectedId() {
-            return _selectedId;
-        },
+        getAbilities() { return _abilities; },
+        setAbilities(list) { _abilities = list; },
 
-        /** 设置当前选中 ID */
-        setSelectedId(id) {
-            _selectedId = id;
-        },
+        getOpportunities() { return _opportunities; },
+        setOpportunities(list) { _opportunities = list; },
 
-        /** 获取场景能力列表 */
-        getAbilities() {
-            return _abilities;
-        },
+        getConfig() { return _config; },
+        setConfig(config) { _config = config; },
 
-        /** 设置场景能力列表 */
-        setAbilities(list) {
-            _abilities = list;
-        },
-
-        /** 获取场景机会列表 */
-        getOpportunities() {
-            return _opportunities;
-        },
-
-        /** 设置场景机会列表 */
-        setOpportunities(list) {
-            _opportunities = list;
-        },
-
-        /** 获取当前匹配参数配置 */
-        getConfig() {
-            return _config;
-        },
-
-        /** 设置当前匹配参数配置 */
-        setConfig(config) {
-            _config = config;
-        },
-
-        /**
-         * 根据当前模式获取对应的列表数据。
-         * 能力模式 → 返回能力列表；机会模式 → 返回机会列表
-         */
         getCurrentList() {
             return _currentMode === 'ability' ? _abilities : _opportunities;
         },
 
-        /**
-         * 根据当前模式获取对应的 item。
-         * 能力模式 → 从 _abilities 中按 ID 查找
-         * 机会模式 → 从 _opportunities 中按 ID 查找
-         */
         getCurrentItem() {
             if (_selectedId == null) return null;
             const list = this.getCurrentList();
             return list.find(item => item.id === _selectedId) || null;
         },
 
-        /**
-         * 获取默认配置副本（调用方放心修改，不影响常量）。
-         */
         getDefaultConfig() {
             return JSON.parse(JSON.stringify(DEFAULT_CONFIG));
         },
 
+        getConfigBackup() { return _configBackup; },
+        setConfigBackup(cfg) {
+            _configBackup = cfg ? JSON.parse(JSON.stringify(cfg)) : null;
+        },
+
+        // ---- v3: 维度元信息 ----
+
+        /** 获取维度元信息列表 */
+        getDimensions() { return _dimensions; },
+
+        /** 设置维度元信息列表 */
+        setDimensions(dims) { _dimensions = dims; },
+
         /**
-         * 获取配置备份（用于「取消」时恢复）。
+         * 获取有效权重 key 列表（从维度元信息推导）。
+         * 如果维度未加载，回退到默认的固定列表。
          */
-        getConfigBackup() {
-            return _configBackup;
+        getWeightKeys() {
+            if (_dimensions && _dimensions.length > 0) {
+                return _dimensions.map(d => d.weight_key);
+            }
+            return ['domain_weight', 'text_weight', 'region_weight'];
         },
 
         /**
-         * 设置配置备份（打开配置面板时调用，保存当前快照）。
+         * 根据 weight_key 获取维度元信息。
          */
-        setConfigBackup(cfg) {
-            _configBackup = cfg ? JSON.parse(JSON.stringify(cfg)) : null;
-        }
+        getDimensionByWeightKey(weightKey) {
+            if (!_dimensions) return null;
+            return _dimensions.find(d => d.weight_key === weightKey) || null;
+        },
+
+        /**
+         * 根据 dim_id 获取维度元信息。
+         */
+        getDimensionById(dimId) {
+            if (!_dimensions) return null;
+            return _dimensions.find(d => d.id === dimId) || null;
+        },
     };
 })();

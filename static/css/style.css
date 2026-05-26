@@ -455,6 +455,13 @@ body {
     display: flex;
 }
 
+/* 通用：score-bar 内的所有色条基础样式（v3：支持动态维度） */
+.score-bar > [class^="score-bar-"] {
+    height: 100%;
+    transition: width 0.3s ease;
+    min-width: 0;
+}
+
 .score-bar-domain {
     height: 100%;
     background: linear-gradient(90deg, var(--color-primary), var(--color-primary-light));

@@ -102,3 +102,87 @@ async function updateConfigAPI(newConfig) {
     }
     return await res.json();
 }
+
+
+/**
+ * 获取维度元信息 + 当前配置值 (v3)。
+ *
+ * 返回格式：
+ *   {
+ *     config: {domain_weight, text_weight, ...},
+ *     dimensions: [{id, label, weight_key, weight, color, icon, detail_type, params: {...}}, ...]
+ *   }
+ */
+async function fetchDimensions() {
+    const res = await fetch(`${BASE_URL}/api/dimensions`);
+    if (!res.ok) throw new Error(`获取维度信息失败: ${res.status}`);
+    return await res.json();
+}
+
+
+/**
+ * 获取能力侧和机会侧可用于匹配的字段列表。
+ *
+ * 返回格式：
+ *   {ability: [...], opportunity: [...]}
+ */
+async function fetchFields() {
+    const res = await fetch(`${BASE_URL}/api/fields`);
+    if (!res.ok) throw new Error(`获取字段列表失败: ${res.status}`);
+    return await res.json();
+}
+
+
+/**
+ * 获取可用匹配方法及其默认参数。
+ *
+ * 返回格式：
+ *   {string_match: {default_detail_type, default_params, ...}, bigram: {...}}
+ */
+async function fetchDimensionMethods() {
+    const res = await fetch(`${BASE_URL}/api/dimensions/methods`);
+    if (!res.ok) throw new Error(`获取匹配方法失败: ${res.status}`);
+    return await res.json();
+}
+
+
+/**
+ * 添加新匹配维度。
+ *
+ * body 格式：
+ *   {label, method, ability_fields, opportunity_fields,
+ *    method_labels, icon, color, score_label, params}
+ *
+ * 返回格式：
+ *   {success, message, dimension: {...}}
+ */
+async function addDimensionAPI(dimDef) {
+    const res = await fetch(`${BASE_URL}/api/dimensions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dimDef),
+    });
+    if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || `添加维度失败: ${res.status}`);
+    }
+    return await res.json();
+}
+
+
+/**
+ * 删除指定匹配维度。
+ *
+ * 返回格式：
+ *   {success, message}
+ */
+async function deleteDimensionAPI(dimId) {
+    const res = await fetch(`${BASE_URL}/api/dimensions/${dimId}`, {
+        method: 'DELETE',
+    });
+    if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || `删除维度失败: ${res.status}`);
+    }
+    return await res.json();
+}

@@ -1,0 +1,48 @@
+/* add_dimension.css —— 添加/删除维度相关样式 */
+
+/* 维度删除按钮（每个维度滑块右侧） */
+.dim-delete-btn {
+    margin-left: 8px;
+    background: none;
+    border: 1px solid var(--color-danger, #EF4444);
+    color: var(--color-danger, #EF4444);
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    vertical-align: middle;
+}
+.dim-delete-btn:hover {
+    background: var(--color-danger, #EF4444);
+    color: white;
+}
+
+/* 添加维度模态框中的表单元素 */
+.config-text-input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--color-border, #E2E8F0);
+    border-radius: var(--radius-sm, 6px);
+    font-size: 14px;
+    outline: none;
+    box-sizing: border-box;
+}
+.config-text-input:focus {
+    border-color: var(--color-primary, #2563EB);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.config-select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--color-border, #E2E8F0);
+    border-radius: var(--radius-sm, 6px);
+    font-size: 14px;
+    background: white;
+    outline: none;
+    cursor: pointer;
+    box-sizing: border-box;
+}
+.config-select:focus {
+    border-color: var(--color-primary, #2563EB);
+}

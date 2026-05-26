@@ -1,47 +1,24 @@
 /**
- * render.js —— DOM 渲染模块 (v2)
+ * render.js —— DOM 渲染模块 (v3：维度注册表驱动)
  *
  * 职责：所有 HTML 元素的创建和更新都集中在此模块。
- * 包括：
- *   - 左侧列表渲染（能力列表 / 机会列表）
- *   - 右侧匹配结果卡片（v2：字段对照表 + 领域匹配详情 + 文本重叠关键词 + 明细面板）
- *   - 参数面板渲染
- *   - Loading 动画和空状态占位
+ * v3 核心变化：
+ *   - 权重滑块由 /api/dimensions 动态生成，不再硬编码 3 个
+ *   - 匹配详情卡片遍历 dimension_scores 渲染，不再硬编码维度
+ *   - 联动滑块逻辑泛化为 N 维通用算法
  */
-
 
 // ============================================================================
 // 工具函数
 // ============================================================================
 
-/**
- * 将概述文本截断为指定字符数，超出部分加省略号。
- *
- * 参数:
- *   text   (str): 原始文本
- *   maxLen (int): 最大字符数
- *
- * 返回:
- *   str: 截断后的文本
- */
 function truncateText(text, maxLen) {
     if (!text) return '';
     return text.length > maxLen ? text.substring(0, maxLen) + '...' : text;
 }
 
-
-/**
- * 将多行文本（含 \n）渲染为带换行的 HTML（用 <br> 替换 \n）。
- *
- * 参数:
- *   text (str): 可能含 \n 的文本
- *
- * 返回:
- *   str: HTML 安全字符串
- */
 function nl2br(text) {
     if (!text) return '';
-    // 先做 HTML 转义
     const escaped = text
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
@@ -50,33 +27,58 @@ function nl2br(text) {
 }
 
 
+// ============================================================================
+// 得分进度条 (v3：动态维度)
+// ============================================================================
+
 /**
- * 生成百分比进度条（领域分 + 文本分 + 区域分 三色 + 总分标签）。
+ * 生成多色百分比进度条。
+ * v3：接受 dimension_scores 对象，自动按维度颜色渲染。
  *
- * 参数:
- *   domainScore (float): 领域得分 (0~1)
- *   textScore   (float): 文本得分 (0~1)
- *   regionScore (float): 区域得分 (0~1)
- *   totalScore  (float): 综合得分 (0~1)
- *   dw          (float): 领域权重
- *   tw          (float): 文本权重
- *   rw          (float): 区域权重
- *
- * 返回:
- *   str: 进度条 HTML 字符串
+ * @param {object} dimScores - {dimId: {score, weight}, ...}
+ * @param {float} totalScore  - 综合得分
+ * @returns {string} HTML 字符串
  */
-function scoreBar(domainScore, textScore, regionScore, totalScore, dw, tw, rw) {
-    const dPct = (domainScore * dw * 100).toFixed(0);
-    const tPct = (textScore   * tw * 100).toFixed(0);
-    const rPct = (regionScore * rw * 100).toFixed(0);
+function scoreBar(dimScores, totalScore) {
     const totalPct = (totalScore * 100).toFixed(1);
+
+    // 筛选有贡献的维度，按原始注册表顺序排序
+    const dims = State.getDimensions() || [];
+    const dimOrder = dims.map(d => d.id);
+    const activeDims = [];
+    for (const dimId of dimOrder) {
+        const ds = dimScores[dimId];
+        if (!ds) continue;
+        const contribPct = parseInt((ds.score * ds.weight * 100).toFixed(0));
+        if (contribPct === 0) continue;
+        activeDims.push({ dimId, ds, contribPct });
+    }
+
+    let barsHtml = '';
+    for (let i = 0; i < activeDims.length; i++) {
+        const { dimId, ds, contribPct } = activeDims[i];
+        const dim = State.getDimensionById(dimId);
+        const color = dim ? dim.color : '#94A3B8';
+        const label = dim ? dim.score_label : dimId;
+        const rawPct = (ds.score * 100).toFixed(0);
+        const weightPct = (ds.weight * 100).toFixed(0);
+
+        // 圆角逻辑：第一个有左边圆角，最后一个有右边圆角
+        let borderRadius = '0';
+        if (activeDims.length === 1) {
+            borderRadius = '4px';
+        } else if (i === 0) {
+            borderRadius = '4px 0 0 4px';
+        } else if (i === activeDims.length - 1) {
+            borderRadius = '0 4px 4px 0';
+        }
+
+        barsHtml += `<div class="score-bar-${dimId}" style="width:${contribPct}%;background:${color};border-radius:${borderRadius}" title="${label}贡献 ${contribPct}% (原始分 ${rawPct}% × 权重 ${weightPct}%)"></div>`;
+    }
+
     return `
         <div class="score-bar-container">
-            <div class="score-bar">
-                <div class="score-bar-domain" style="width:${dPct}%" title="领域贡献 ${dPct}% (原始分 ${(domainScore*100).toFixed(0)}% × 权重 ${(dw*100).toFixed(0)}%)"></div>
-                <div class="score-bar-text"   style="width:${tPct}%" title="文本贡献 ${tPct}% (原始分 ${(textScore*100).toFixed(0)}% × 权重 ${(tw*100).toFixed(0)}%)"></div>
-                <div class="score-bar-region" style="width:${rPct}%" title="区域贡献 ${rPct}% (原始分 ${(regionScore*100).toFixed(0)}% × 权重 ${(rw*100).toFixed(0)}%)"></div>
-            </div>
+            <div class="score-bar">${barsHtml}</div>
             <span class="score-label">综合 <strong>${totalPct}%</strong></span>
         </div>
     `;
@@ -84,14 +86,9 @@ function scoreBar(domainScore, textScore, regionScore, totalScore, dw, tw, rw) {
 
 
 // ============================================================================
-// 左侧列表渲染
+// 左侧列表渲染 (不变)
 // ============================================================================
 
-/**
- * 渲染左侧列表。
- * 根据当前模式（能力/机会）决定列表项展示的字段。
- * 选中项添加高亮样式。
- */
 function renderList() {
     const listEl = document.getElementById('item-list');
     if (!listEl) return;
@@ -138,92 +135,64 @@ function renderList() {
 
     listEl.innerHTML = html;
 
-    // 更新底部计数
     const countEl = document.getElementById('list-count');
-    if (countEl) {
-        countEl.textContent = `共 ${items.length} 条`;
-    }
+    if (countEl) countEl.textContent = `共 ${items.length} 条`;
 
-    // 更新顶栏标题
     const titleEl = document.getElementById('mode-label');
-    if (titleEl) {
-        titleEl.textContent = mode === 'ability' ? '场景能力列表' : '场景机会列表';
-    }
+    if (titleEl) titleEl.textContent = mode === 'ability' ? '场景能力列表' : '场景机会列表';
 }
 
 
 // ============================================================================
-// 参数面板渲染
+// 参数面板渲染 (v3：动态维度)
 // ============================================================================
 
-/**
- * 在右侧面板顶部渲染匹配参数信息条。
- * 展示当前使用的权重、TopN、文本截取长度。
- *
- * 参数:
- *   config (dict): {domain_weight, text_weight, top_n, text_max_length}
- */
 function renderConfigPanel(config) {
     const panelEl = document.getElementById('config-panel');
     if (!panelEl) return;
-    if (!config) {
-        panelEl.innerHTML = '';
-        return;
-    }
+    if (!config) { panelEl.innerHTML = ''; return; }
 
-    const dw = (config.domain_weight * 100).toFixed(1);
-    const tw = (config.text_weight   * 100).toFixed(1);
-    const rw = (config.region_weight * 100).toFixed(1);
+    const dims = State.getDimensions() || [];
+    let dimItems = '';
+    for (let i = 0; i < dims.length; i++) {
+        const d = dims[i];
+        const pct = ((config[d.weight_key] || 0) * 100).toFixed(1);
+        dimItems += `<span class="config-item">${d.icon || ''} ${d.score_label} <strong>${pct}%</strong></span>`;
+        if (i < dims.length - 1) dimItems += '<span class="config-sep">|</span>';
+    }
 
     panelEl.innerHTML = `
         <div class="config-panel-inner">
             <span class="config-panel-title">⚙ 匹配参数</span>
-            <span class="config-item">领域 <strong>${dw}%</strong></span>
-            <span class="config-sep">|</span>
-            <span class="config-item">文本 <strong>${tw}%</strong></span>
-            <span class="config-sep">|</span>
-            <span class="config-item">区域 <strong>${rw}%</strong></span>
+            ${dimItems}
             <span class="config-sep">|</span>
             <span class="config-item">Top <strong>${config.top_n}</strong></span>
             <span class="config-sep">|</span>
-            <span class="config-item">截取 <strong>${config.text_max_length}</strong> 字</span>
+            <span class="config-item">截取 <strong>${config.text_max_length || 300}</strong> 字</span>
         </div>
     `;
 }
 
 
 // ============================================================================
-// 右侧卡片渲染 (v2：详细匹配明细)
+// 右侧卡片渲染 (v3：动态维度详情)
 // ============================================================================
 
-/**
- * 渲染右侧匹配结果卡片。
- * v2 新增：字段对照表、领域匹配详情、文本重叠关键词标签。
- *
- * 参数:
- *   data ({source, matches, config}): 后端返回的匹配结果（含配置）
- */
 function renderCards(data) {
     const cardsEl = document.getElementById('match-cards');
     if (!cardsEl) return;
 
-    // ---- 更新选中源信息 ----
+    // 选中源信息
     if (data && data.source) {
         const src = data.source;
         const srcTitleEl = document.getElementById('source-title');
-        if (srcTitleEl) {
-            srcTitleEl.textContent = src.name;
-        }
+        if (srcTitleEl) srcTitleEl.textContent = src.name;
         const srcSubEl = document.getElementById('source-sub');
-        if (srcSubEl) {
-            srcSubEl.textContent = src.company || src.domain || '';
-        }
+        if (srcSubEl) srcSubEl.textContent = src.company || src.domain || '';
     }
 
-    // ---- 渲染参数面板 ----
-    if (data && data.config) {
-        renderConfigPanel(data.config);
-    }
+    // 参数面板
+    if (data && data.config) renderConfigPanel(data.config);
 
     if (!data || !data.matches || data.matches.length === 0) {
         cardsEl.innerHTML = '<div class="cards-empty">未找到匹配项</div>';
@@ -231,42 +200,37 @@ function renderCards(data) {
     }
 
     const rankColors = ['#3B82F6', '#22C55E', '#F59E0B'];
-    const dw = (data.config && data.config.domain_weight) || 0.4;
-    const tw = (data.config && data.config.text_weight)   || 0.3;
-    const rw = (data.config && data.config.region_weight) || 0.3;
+    const dims = State.getDimensions() || [];
 
     let html = '';
 
     data.matches.forEach((m, idx) => {
-        const t    = m.target;
+        const t = m.target;
         const rankColor = rankColors[idx] || '#94A3B8';
-        const sf   = m.source_fields || {};
-        const tf   = m.target_fields || {};
+        const sf = m.source_fields || {};
+        const tf = m.target_fields || {};
+        const dimScores = m.dimension_scores || {};
 
-        // ---- 1) 排名徽章 + 标题 ----
+        // 1) 排名徽章 + 标题
         html += `
         <div class="match-card">
             <div class="card-rank" style="background:${rankColor}">#${idx + 1}</div>
             <div class="card-header">
                 <h3 class="card-title">${t.name}</h3>
                 <span class="card-tag">${t.domain || ''}</span>
-            </div>
-        `;
+            </div>`;
 
-        // ---- 2) 字段对照表 ----
+        // 2) 字段对照表
         html += '<div class="card-section"><div class="card-section-title">📋 匹配字段对照</div>';
         html += '<div class="field-compare">';
-
         const sfKeys = Object.keys(sf);
         const tfKeys = Object.keys(tf);
         const maxLen = Math.max(sfKeys.length, tfKeys.length);
-
         for (let i = 0; i < maxLen; i++) {
             const sKey = sfKeys[i] || '';
             const tKey = tfKeys[i] || '';
             const sVal = sf[sKey] ? truncateText(sf[sKey], 60) : '';
             const tVal = tf[tKey] ? truncateText(tf[tKey], 60) : '';
-
             html += `
                 <div class="field-row">
                     <div class="field-col field-col-left">
@@ -278,37 +242,32 @@ function renderCards(data) {
                         <span class="field-label">${tKey}</span>
                         <span class="field-value">${tVal}</span>
                     </div>
-                </div>
-            `;
+                </div>`;
         }
+        html += '</div></div>';
 
-        html += '</div></div>';  // 关闭字段对照
+        // 3) 遍历维度详情
+        for (const dim of dims) {
+            const dimId = dim.id;
+            const ds = dimScores[dimId] || { score: 0, detail: '', weight: 0 };
+            const rawScore = (ds.score * 100);
+            const contrib = (ds.score * ds.weight * 100);
 
-        // ---- 3) 领域匹配详情 ----
-        html += `
-            <div class="card-section">
+            html += `<div class="card-section">
                 <div class="card-section-title">
-                    🔍 领域匹配
-                    <span class="section-score">原始得分：${(m.domain_score * 100).toFixed(0)}%</span>
-                    <span class="section-score section-score-weighted">加权贡献：${(m.domain_score * dw * 100).toFixed(0)}%</span>
-                </div>
-                <div class="card-detail-text">${nl2br(m.domain_match_detail)}</div>
-            </div>
-        `;
+                    ${dim.icon || ''} ${dim.label}
+                    <span class="section-score">原始得分：${dim.detail_type === 'bigram' ? rawScore.toFixed(1) : rawScore.toFixed(0)}%</span>
+                    <span class="section-score section-score-weighted">加权贡献：${contrib.toFixed(0)}%</span>
+                </div>`;
 
-        // ---- 4) 文本匹配详情 ----
-        const td = m.text_match_detail || {};
-        const bigrams = td.overlapping_bigrams || [];
-        const overlapCnt = td.overlap_count || 0;
-        const unionCnt   = td.union_count || 0;
+            if (dim.detail_type === 'bigram') {
+                // 文本匹配详情
+                const td = ds.detail || {};
+                const bigrams = td.overlapping_bigrams || [];
+                const overlapCnt = td.overlap_count || 0;
+                const unionCnt = td.union_count || 0;
 
-        html += `
-            <div class="card-section">
-                <div class="card-section-title">
-                    📐 文本匹配
-                    <span class="section-score">原始得分：${(m.text_score * 100).toFixed(1)}%</span>
-                    <span class="section-score section-score-weighted">加权贡献：${(m.text_score * tw * 100).toFixed(1)}%</span>
-                </div>
+                html += `
                 <div class="text-stats">
                     <div class="text-stat">
                         <span class="text-stat-label">重叠 Bigram</span>
@@ -329,40 +288,27 @@ function renderCards(data) {
                     <div class="text-snippet-val">${td.text_a_snippet || '--'}</div>
                     <div class="text-snippet-label">文本B摘要（机会侧）：</div>
                     <div class="text-snippet-val">${td.text_b_snippet || '--'}</div>
-                </div>
-        `;
+                </div>`;
 
-        // 重叠 bigram 关键词标签
-        if (bigrams.length > 0) {
-            html += '<div class="bigram-tags">';
-            html += '<span class="bigram-tags-label">重叠关键词(2-gram)：</span>';
-            bigrams.forEach(bg => {
-                html += `<span class="bigram-tag">${bg}</span>`;
-            });
+                if (bigrams.length > 0) {
+                    html += '<div class="bigram-tags"><span class="bigram-tags-label">重叠关键词(2-gram)：</span>';
+                    bigrams.forEach(bg => { html += `<span class="bigram-tag">${bg}</span>`; });
+                    html += '</div>';
+                } else {
+                    html += '<div class="bigram-tags"><span class="bigram-tags-empty">无重叠关键词</span></div>';
+                }
+            } else {
+                // 文本/区域等通用文本详情
+                html += `<div class="card-detail-text">${nl2br(ds.detail || '无匹配信息')}</div>`;
+            }
+
             html += '</div>';
-        } else {
-            html += '<div class="bigram-tags"><span class="bigram-tags-empty">无重叠关键词</span></div>';
         }
 
-        html += '</div>';  // 关闭文本匹配
+        // 4) 得分进度条
+        html += scoreBar(dimScores, m.total_score);
 
-        // ---- 5) 区域匹配详情 ----
-        const regionScoreVal = (m.region_score != null) ? m.region_score : 0;
-        html += `
-            <div class="card-section">
-                <div class="card-section-title">
-                    📍 区域匹配
-                    <span class="section-score">原始得分：${(regionScoreVal * 100).toFixed(0)}%</span>
-                    <span class="section-score section-score-weighted">加权贡献：${(regionScoreVal * rw * 100).toFixed(0)}%</span>
-                </div>
-                <div class="card-detail-text">${nl2br(m.region_match_detail || '无区域匹配信息')}</div>
-            </div>
-        `;
-
-        // ---- 6) 得分进度条 ----
-        html += scoreBar(m.domain_score, m.text_score, regionScoreVal, m.total_score, dw, tw, rw);
-
-        html += '</div>';  // 关闭 match-card
+        html += '</div>';
     });
 
     cardsEl.innerHTML = html;
@@ -373,9 +319,6 @@ function renderCards(data) {
 // 状态占位渲染
 // ============================================================================
 
-/**
- * 显示 Loading 动画（右侧卡片区域）。
- */
 function showLoading() {
     const cardsEl = document.getElementById('match-cards');
     if (!cardsEl) return;
@@ -383,16 +326,10 @@ function showLoading() {
         <div class="loading-container">
             <div class="loading-spinner"></div>
             <p>正在匹配...</p>
-        </div>
-    `;
-    // 清空参数面板
+        </div>`;
     renderConfigPanel(null);
 }
 
-
-/**
- * 显示空状态提示（右侧卡片区域）。
- */
 function showEmpty() {
     const cardsEl = document.getElementById('match-cards');
     if (!cardsEl) return;
@@ -400,35 +337,27 @@ function showEmpty() {
         <div class="cards-empty">
             <div class="empty-icon">←</div>
             <p>请从左侧列表中选择一条记录</p>
-            <p class="empty-hint">点击后右侧将展示最匹配的 3 条结果</p>
-        </div>
-    `;
-    // 清空参数面板
+            <p class="empty-hint">点击后右侧将展示最匹配的结果</p>
+        </div>`;
     renderConfigPanel(null);
 }
 
 
 // ============================================================================
-// 配置模态框交互逻辑
+// 配置模态框交互逻辑 (v3：动态维度)
 // ============================================================================
 
-/** 当前权重调整策略：'free'（策略1）| 'linked'（策略2） */
 let _configStrategy = 'free';
-
-/** 联动更新进行中标志：防止设置滑块值时级联触发其他 handler */
 let _linkedBusy = false;
 
+/** 所有动态注册的滑块事件引用，方便解绑 */
+let _sliderEventRefs = [];
 
-/**
- * 重新拉取当前选中项的匹配结果并渲染。
- * 如果没有任何选中项则不做任何事。
- */
+
 async function _refetchCurrentMatch() {
     const selectedId = State.getSelectedId();
     if (selectedId == null) return;
-
     showLoading();
-
     try {
         const mode = State.getMode();
         let result;
@@ -437,10 +366,7 @@ async function _refetchCurrentMatch() {
         } else {
             result = await fetchMatchForOpportunity(selectedId);
         }
-
-        if (result && result.config) {
-            State.setConfig(result.config);
-        }
+        if (result && result.config) State.setConfig(result.config);
         renderCards(result);
     } catch (err) {
         console.error('[refetchCurrentMatch] 匹配请求失败:', err);
@@ -451,64 +377,143 @@ async function _refetchCurrentMatch() {
 }
 
 
-/**
- * 比较待保存配置与打开模态框时备份的配置是否有差异。
- * 返回 true 表示配置确实变了，需要重新加载匹配结果。
- *
- * @param {object} newConfig - saveConfig() 构建的新配置
- * @returns {boolean}
- */
 function _configHasChanged(newConfig) {
     const backup = State.getConfigBackup();
-    if (!backup) return true; // 没有备份（异常情况），保守处理：执行刷新
+    if (!backup) return true;
 
-    // 只比较影响匹配结果的五个字段
-    const keys = ['domain_weight', 'text_weight', 'region_weight', 'top_n', 'text_max_length'];
+    // 比较所有 config 中可能影响匹配结果的 key（动态获取）
+    const keys = new Set([...Object.keys(newConfig), ...Object.keys(backup)]);
     for (const k of keys) {
-        if (newConfig[k] !== backup[k]) {
-            return true;
+        if (k === 'top_n' || k.endsWith('_weight') || k.endsWith('_length')) {
+            if (newConfig[k] !== backup[k]) return true;
         }
     }
     return false;
 }
 
 
+// ---- 动态滑块生成 ----
+
 /**
- * 打开配置模态框。
- * 从 State 读取当前配置填入表单，备份配置（供「取消」恢复），
- * 根据当前策略初始化滑块行为。
+ * 根据维度元信息生成权重滑块 HTML，插入 #config-weight-sliders 容器。
  */
-function openConfigModal() {
+function _buildWeightSlidersHTML(dims, config) {
+    let html = '';
+    const canDelete = dims.length > 1;
+    for (const dim of dims) {
+        const rawVal = Math.round((config[dim.weight_key] || dim.default_weight || 0) * 1000);
+        const deleteBtn = canDelete
+            ? `<button class="dim-delete-btn" data-dim-id="${dim.id}" title="删除此维度">🗑 删除</button>`
+            : '';
+        html += `
+        <div class="config-section dim-config-section" data-dim-id="${dim.id}">
+            <div class="config-label">
+                <span class="dim-label-text">${dim.icon || ''} ${dim.label}（${dim.weight_key}）</span>
+                <span class="config-value-display" id="display-${dim.id}">${(rawVal / 10).toFixed(1)}%</span>
+                ${deleteBtn}
+            </div>
+            <input type="range" id="slider-${dim.id}"
+                   class="config-slider" min="0" max="1000" value="${rawVal}"
+                   step="1" data-dim="${dim.id}">
+            <div class="slider-labels"><span>0%</span><span>50%</span><span>100%</span></div>
+        </div>`;
+    }
+    // 添加维度按钮
+    html += `
+        <div class="config-section" style="text-align:center;">
+            <button id="btn-add-dimension" class="config-btn config-btn-secondary">
+                ➕ 添加匹配维度
+            </button>
+        </div>`;
+    return html;
+}
+
+
+/**
+ * 生成维度私有参数表单（如文本匹配的 max_length）。
+ */
+function _buildDimParamsHTML(dims, config) {
+    let html = '';
+    for (const dim of dims) {
+        if (!dim.params) continue;
+        for (const pk in dim.params) {
+            const pv = dim.params[pk];
+            const configKey = pv.config_key || `${dim.id}_${pk}`;
+            const val = config[configKey] != null ? config[configKey] : pv.default;
+            html += `
+            <div class="config-section">
+                <div class="config-label">${pv.label}（${configKey}）</div>
+                <div class="config-input-row">
+                    <input type="range" id="slider-${configKey}"
+                           class="config-slider config-slider-short"
+                           min="${pv.min || 0}" max="${pv.slider_max || pv.max || 100}"
+                           value="${val}" step="${pv.step || 1}" data-dim-param="${configKey}">
+                    <input type="number" id="input-${configKey}"
+                           class="config-number-input"
+                           min="${pv.min || 0}" max="${pv.max || 9999}"
+                           value="${val}" step="${pv.step || 1}" data-dim-param-num="${configKey}">
+                </div>
+                ${pv.hint ? `<div class="config-hint">${pv.hint}</div>` : ''}
+            </div>`;
+        }
+    }
+    return html;
+}
+
+
+// ---- 打开/关闭模态框 ----
+
+async function openConfigModal() {
+    // 确保维度已加载
+    let dims = State.getDimensions();
+    if (!dims || dims.length === 0) {
+        try {
+            const data = await fetchDimensions();
+            State.setDimensions(data.dimensions);
+            if (data.config) State.setConfig(data.config);
+            dims = data.dimensions;
+        } catch (e) {
+            console.error('加载维度信息失败:', e);
+            dims = [];
+        }
+    }
+
     const cfg = State.getConfig() || State.getDefaultConfig();
-    // 备份（取消时用）
     State.setConfigBackup(cfg);
 
     const overlay = document.getElementById('config-overlay');
     if (overlay) overlay.style.display = 'flex';
 
-    // 填充表单值
-    const dw = Math.round((cfg.domain_weight || 0.4) * 1000);
-    const tw = Math.round((cfg.text_weight   || 0.3) * 1000);
-    const rw = Math.round((cfg.region_weight || 0.3) * 1000);
-    const topN   = cfg.top_n           || 3;
-    const maxLen = cfg.text_max_length || 300;
+    // 动态生成权重滑块
+    const slidersContainer = document.getElementById('config-weight-sliders');
+    if (slidersContainer && dims.length > 0) {
+        slidersContainer.innerHTML = _buildWeightSlidersHTML(dims, cfg);
+    }
 
-    _setConfigFormValues(dw, tw, rw, topN, maxLen);
+    // 动态生成维度私有参数
+    const paramsContainer = document.getElementById('config-dim-params');
+    if (paramsContainer && dims.length > 0) {
+        paramsContainer.innerHTML = _buildDimParamsHTML(dims, cfg);
+    }
 
-    // 初始化策略状态（默认 free）
+    // TopN 和 text_max_length 用回原有的静态控件（text_max_length 已迁移到动态，TopN 保留）
+    const topN = cfg.top_n || 3;
+    const sn = document.getElementById('slider-top-n');
+    const inputN = document.getElementById('input-top-n');
+    if (sn) sn.value = topN;
+    if (inputN) inputN.value = topN;
+
+    // 初始化策略
     _configStrategy = 'free';
     _initStrategyButtons();
     _updateStrategyHint();
     _updateWeightSum();
 
-    // 绑定滑块事件（使用 { once: false } 的匿名函数方便移除）
+    // 绑定事件
     _bindSliderEvents();
 }
 
 
-/**
- * 关闭配置模态框。
- */
 function closeConfigModal() {
     const overlay = document.getElementById('config-overlay');
     if (overlay) overlay.style.display = 'none';
@@ -516,142 +521,176 @@ function closeConfigModal() {
 }
 
 
-/**
- * 将当前表单值写入后端配置。
- * 策略1：若权重之和≠100% 则等比例缩放后保存。
- * 策略2：因滑块始终联动，必然为100，直接保存。
- */
+// ---- 保存/取消/重置 ----
+
 async function saveConfig() {
-    const dwPct  = parseInt(document.getElementById('slider-domain-weight').value) || 0;
-    const twPct  = parseInt(document.getElementById('slider-text-weight').value) || 0;
-    const rwPct  = parseInt(document.getElementById('slider-region-weight').value) || 0;
-    const topN   = parseInt(document.getElementById('input-top-n').value) || 3;
-    const maxLen = parseInt(document.getElementById('input-text-len').value) || 300;
+    const dims = State.getDimensions() || [];
+    const newConfig = {};
 
-    let dw = dwPct / 1000;
-    let tw = twPct / 1000;
-    let rw = rwPct / 1000;
+    // 收集所有权重滑块的值
+    let sumPct = 0;
+    for (const dim of dims) {
+        const slider = document.getElementById(`slider-${dim.id}`);
+        const val = slider ? parseInt(slider.value) || 0 : Math.round(dim.default_weight * 1000);
+        sumPct += val;
+        newConfig[dim.weight_key] = val / 1000;
+    }
 
-    // 策略1：保存时检查并自动缩放（使用整数运算避免浮点误差）
-    if (_configStrategy === 'free') {
-        const sum = dwPct + twPct + rwPct;
-        if (sum !== 0 && sum !== 1000) {
-            // 整数运算：先缩放再取整
-            const scaledDw = Math.round(dwPct * 1000 / sum);
-            const scaledTw = Math.round(twPct * 1000 / sum);
-            const scaledRw = 1000 - scaledDw - scaledTw;
-            dw = scaledDw / 1000;
-            tw = scaledTw / 1000;
-            rw = scaledRw / 1000;
+    // 策略1：缩放
+    if (_configStrategy === 'free' && sumPct !== 1000 && sumPct !== 0) {
+        let scaledSum = 0;
+        const weightKeys = dims.map(d => d.weight_key);
+        for (let i = 0; i < weightKeys.length - 1; i++) {
+            const val = newConfig[weightKeys[i]] * 1000;
+            const scaled = Math.round(val * 1000 / sumPct) / 1000;
+            newConfig[weightKeys[i]] = Math.max(0, Math.min(1, scaled));
+            scaledSum += newConfig[weightKeys[i]];
+        }
+        const lastKey = weightKeys[weightKeys.length - 1];
+        newConfig[lastKey] = Math.max(0, Math.min(1, Math.round((1 - scaledSum) * 1000) / 1000));
+    }
+
+    // 收集维度私有参数
+    for (const dim of dims) {
+        if (!dim.params) continue;
+        for (const pk in dim.params) {
+            const configKey = dim.params[pk].config_key || `${dim.id}_${pk}`;
+            const numInput = document.getElementById(`input-${configKey}`);
+            const val = numInput ? parseInt(numInput.value) : dim.params[pk].default;
+            newConfig[configKey] = val;
         }
     }
 
-    const newConfig = {
-        domain_weight:   Math.max(0, Math.min(1, dw)),
-        text_weight:     Math.max(0, Math.min(1, tw)),
-        region_weight:   Math.max(0, Math.min(1, rw)),
-        top_n:           Math.max(1, Math.min(20, topN)),
-        text_max_length: Math.max(50, Math.min(2000, maxLen)),
-    };
+    // TopN
+    const topN = parseInt(document.getElementById('input-top-n').value) || 3;
+    newConfig.top_n = Math.max(1, Math.min(20, topN));
 
     try {
         const saved = await updateConfigAPI(newConfig);
         State.setConfig(saved);
-        // 同步更新原始配置面板（卡片区上方）
         renderConfigPanel(saved);
         closeConfigModal();
-
-        // 判断配置是否真的变了，变了才重新加载匹配结果
-        if (_configHasChanged(newConfig)) {
-            await _refetchCurrentMatch();
-        }
+        if (_configHasChanged(newConfig)) await _refetchCurrentMatch();
     } catch (err) {
         alert('保存失败：' + err.message);
     }
 }
 
 
-/**
- * 取消：关闭模态框，不保存。
- */
-function cancelConfig() {
-    closeConfigModal();
-}
+function cancelConfig() { closeConfigModal(); }
 
 
-/**
- * 恢复默认配置。
- * 将表单重置为 DEFAULT_CONFIG 的值，不改变策略。
- */
 function resetConfig() {
-    const def = State.getDefaultConfig();
-    const dw = Math.round(def.domain_weight * 1000);
-    const tw = Math.round(def.text_weight   * 1000);
-    const rw = Math.round(def.region_weight * 1000);
-    _setConfigFormValues(dw, tw, rw, def.top_n, def.text_max_length);
-    _updateWeightSum();
-}
+    const dims = State.getDimensions() || [];
+    const cfg = State.getConfig() || State.getDefaultConfig();
 
+    for (const dim of dims) {
+        const slider = document.getElementById(`slider-${dim.id}`);
+        const val = Math.round(dim.default_weight * 1000);
+        if (slider) slider.value = val;
+    }
 
-// ====================================================================
-// 内部辅助函数
-// ====================================================================
+    // 重置维度私有参数
+    for (const dim of dims) {
+        if (!dim.params) continue;
+        for (const pk in dim.params) {
+            const configKey = dim.params[pk].config_key || `${dim.id}_${pk}`;
+            const slider = document.getElementById(`slider-${configKey}`);
+            const numInput = document.getElementById(`input-${configKey}`);
+            const def = dim.params[pk].default;
+            if (slider) slider.value = def;
+            if (numInput) numInput.value = def;
+        }
+    }
 
-/** 往表单填入值（滑块 + 数字框同步） */
-function _setConfigFormValues(dwPct, twPct, rwPct, topN, maxLen) {
-    const sd = document.getElementById('slider-domain-weight');
-    const st = document.getElementById('slider-text-weight');
-    const sr = document.getElementById('slider-region-weight');
-    const it = document.getElementById('input-top-n');
-    const il = document.getElementById('input-text-len');
-    if (sd) sd.value = dwPct;
-    if (st) st.value = twPct;
-    if (sr) sr.value = rwPct;
-    if (it) it.value = topN;
-    if (il) il.value = maxLen;
+    // 重置 TopN
+    const sn = document.getElementById('slider-top-n');
+    const inN = document.getElementById('input-top-n');
+    if (sn) sn.value = 3;
+    if (inN) inN.value = 3;
+
     _syncDisplayFromSliders();
 }
 
-/** 更新权重合计显示与状态色 */
+
+// ---- 内部辅助函数 ----
+
 function _updateWeightSum() {
-    const sd = document.getElementById('slider-domain-weight');
-    const st = document.getElementById('slider-text-weight');
-    const sr = document.getElementById('slider-region-weight');
-    if (!sd || !st || !sr) return;
-    const sum = parseInt(sd.value) + parseInt(st.value) + parseInt(sr.value);
-    const valEl  = document.getElementById('weight-sum-val');
+    const dims = State.getDimensions() || [];
+    let sum = 0;
+    for (const dim of dims) {
+        const slider = document.getElementById(`slider-${dim.id}`);
+        if (slider) sum += parseInt(slider.value) || 0;
+    }
+
+    const valEl = document.getElementById('weight-sum-val');
     const statusEl = document.getElementById('weight-sum-status');
-    const barEl    = document.getElementById('weight-sum-bar');
-    if (valEl)  valEl.textContent = (sum / 10).toFixed(1) + '%';
+    const barEl = document.getElementById('weight-sum-bar');
+
+    if (valEl) valEl.textContent = (sum / 10).toFixed(1) + '%';
     if (statusEl) {
-        if (sum === 1000) {
-            statusEl.textContent = '✓ 正常';
-        } else if (sum === 0) {
-            statusEl.textContent = '⚠ 均为0';
-        } else {
-            statusEl.textContent = '⚠ 将自动缩放至100%';
-        }
+        if (sum === 1000) statusEl.textContent = '✓ 正常';
+        else if (sum === 0) statusEl.textContent = '⚠ 均为0';
+        else statusEl.textContent = '⚠ 将自动缩放至100%';
     }
-    if (barEl) {
-        barEl.className = 'config-weight-sum' + (sum === 1000 ? '' : ' warning');
-    }
+    if (barEl) barEl.className = 'config-weight-sum' + (sum === 1000 ? '' : ' warning');
 }
 
-/** 根据滑块位置同步更新百分比标签 */
+
 function _syncDisplayFromSliders() {
-    const sd = document.getElementById('slider-domain-weight');
-    const st = document.getElementById('slider-text-weight');
-    const sr = document.getElementById('slider-region-weight');
-    const dd = document.getElementById('dw-display');
-    const dt = document.getElementById('tw-display');
-    const dr = document.getElementById('rw-display');
-    if (dd && sd) dd.textContent = (parseInt(sd.value) / 10).toFixed(1) + '%';
-    if (dt && st) dt.textContent = (parseInt(st.value) / 10).toFixed(1) + '%';
-    if (dr && sr) dr.textContent = (parseInt(sr.value) / 10).toFixed(1) + '%';
+    const dims = State.getDimensions() || [];
+    for (const dim of dims) {
+        const slider = document.getElementById(`slider-${dim.id}`);
+        const display = document.getElementById(`display-${dim.id}`);
+        if (slider && display) {
+            display.textContent = (parseInt(slider.value) / 10).toFixed(1) + '%';
+        }
+    }
     _updateWeightSum();
 }
 
-/** 初始化策略按钮高亮状态 */
+
+/**
+ * 联动模式：修改一个权重，其余按比例等比例缩放填满 1000。
+ * v3：泛化为 N 维通用算法。
+ */
+function _updateLinkedSliders(changedId, newValue) {
+    _linkedBusy = true;
+
+    const dims = State.getDimensions() || [];
+    const remain = Math.max(0, 1000 - newValue);
+
+    // 收集其他滑块的当前值
+    const others = [];
+    let sumOthers = 0;
+    for (const dim of dims) {
+        if (dim.id === changedId) continue;
+        const slider = document.getElementById(`slider-${dim.id}`);
+        if (!slider) continue;
+        const val = parseInt(slider.value) || 0;
+        others.push({ dim, slider, val });
+        sumOthers += val;
+    }
+
+    if (others.length === 0) { _linkedBusy = false; return; }
+
+    // 按比例分配（最后一个用减法兜底）
+    const safeSum = sumOthers || 1;
+    let allocated = 0;
+    for (let i = 0; i < others.length - 1; i++) {
+        const newVal = Math.round(remain * others[i].val / safeSum);
+        others[i].slider.value = newVal;
+        allocated += newVal;
+    }
+    if (others.length > 0) {
+        others[others.length - 1].slider.value = remain - allocated;
+    }
+
+    _syncDisplayFromSliders();
+    _linkedBusy = false;
+}
+
+
 function _initStrategyButtons() {
     const btns = document.querySelectorAll('#strategy-switch .strategy-btn');
     btns.forEach(btn => {
@@ -659,206 +698,119 @@ function _initStrategyButtons() {
     });
 }
 
-/** 更新策略提示文字 */
+
 function _updateStrategyHint() {
     const hint = document.getElementById('strategy-hint');
     if (!hint) return;
     if (_configStrategy === 'free') {
         hint.textContent = '当前：自由调整，保存时若权重之和≠100% 将自动等比例缩放至100%。';
     } else {
-        hint.textContent = '当前：联动调整，修改一个权重将自动等比例缩放另一个，始终保持合计100%。';
+        hint.textContent = '当前：联动调整，修改一个权重将自动等比例缩放其他，始终保持合计100%。';
     }
 }
 
-// 滑块事件绑定引用（方便移除）
-let _onDomainSliderInput  = null;
-let _onTextSliderInput     = null;
-let _onRegionSliderInput   = null;
-let _onTopNSliderInput     = null;
-let _onTextLenSliderInput  = null;
-let _onTopNNumberChange    = null;
-let _onTextLenNumberChange = null;
 
+// ---- 事件绑定/解绑（v3：动态） ----
 
-/**
- * 联动模式下集中更新三个权重滑块。
- * 被拖动的那个滑块值由用户决定，另外两个按当前比例等比例缩放填满剩余空间。
- * 使用 _linkedBusy 锁防止内部 set value 时级联触发其他 handler。
- *
- * @param {'domain'|'text'|'region'} changed - 用户正在拖动的滑块
- * @param {number} newValue - 被拖动滑块的新值 (0-1000，0.1%精度)
- */
-function _updateLinkedSliders(changed, newValue) {
-    _linkedBusy = true;
-
-    const sd = document.getElementById('slider-domain-weight');
-    const st = document.getElementById('slider-text-weight');
-    const sr = document.getElementById('slider-region-weight');
-    if (!sd || !st || !sr) { _linkedBusy = false; return; }
-
-    const remain = Math.max(0, 1000 - newValue);
-
-    // 先读取另外两个的当前值，作为比例计算的基准
-    let aVal, bVal;
-
-    if (changed === 'domain') {
-        aVal = parseInt(st.value) || 0;
-        bVal = parseInt(sr.value) || 0;
-        const sum = aVal + bVal || 1;
-        const newA = Math.round(remain * aVal / sum);
-        const newB = remain - newA;  // 减法确保合计精确 1000
-        st.value = newA;
-        sr.value = newB;
-    } else if (changed === 'text') {
-        aVal = parseInt(sd.value) || 0;
-        bVal = parseInt(sr.value) || 0;
-        const sum = aVal + bVal || 1;
-        const newA = Math.round(remain * aVal / sum);
-        const newB = remain - newA;
-        sd.value = newA;
-        sr.value = newB;
-    } else { // region
-        aVal = parseInt(sd.value) || 0;
-        bVal = parseInt(st.value) || 0;
-        const sum = aVal + bVal || 1;
-        const newA = Math.round(remain * aVal / sum);
-        const newB = remain - newA;
-        sd.value = newA;
-        st.value = newB;
-    }
-
-    _syncDisplayFromSliders();
-    _linkedBusy = false;
-}
-
-/** 绑定滑块 & 数字输入框事件 */
 function _bindSliderEvents() {
-    _unbindSliderEvents(); // 先解绑，防止重复
+    _unbindSliderEvents();
 
-    const sd = document.getElementById('slider-domain-weight');
-    const st = document.getElementById('slider-text-weight');
-    const sr = document.getElementById('slider-region-weight');
+    const dims = State.getDimensions() || [];
+
+    // 权重滑块
+    for (const dim of dims) {
+        const slider = document.getElementById(`slider-${dim.id}`);
+        if (!slider) continue;
+
+        const handler = function () {
+            if (_linkedBusy) return;
+            if (_configStrategy === 'linked') {
+                _updateLinkedSliders(dim.id, parseInt(this.value));
+                return;
+            }
+            _syncDisplayFromSliders();
+        };
+        slider.addEventListener('input', handler);
+        _sliderEventRefs.push({ el: slider, type: 'input', handler });
+    }
+
+    // 维度私有参数滑块 ↔ 数字框双向同步
+    for (const dim of dims) {
+        if (!dim.params) continue;
+        for (const pk in dim.params) {
+            const configKey = dim.params[pk].config_key || `${dim.id}_${pk}`;
+            const paramSlider = document.getElementById(`slider-${configKey}`);
+            const numInput = document.getElementById(`input-${configKey}`);
+
+            if (paramSlider && numInput) {
+                const sliderHandler = function () { numInput.value = this.value; };
+                const numHandler = function () { paramSlider.value = this.value; };
+                paramSlider.addEventListener('input', sliderHandler);
+                numInput.addEventListener('change', numHandler);
+                _sliderEventRefs.push({ el: paramSlider, type: 'input', handler: sliderHandler });
+                _sliderEventRefs.push({ el: numInput, type: 'change', handler: numHandler });
+            }
+        }
+    }
+
+    // TopN 双向同步（静态控件）
     const sn = document.getElementById('slider-top-n');
-    const sl = document.getElementById('slider-text-len');
-    const inputN = document.getElementById('input-top-n');
-    const il = document.getElementById('input-text-len');
-
-    // ---- 领域权重滑块 ----
-    _onDomainSliderInput = function () {
-        if (_linkedBusy) return;
-        if (_configStrategy === 'linked') {
-            _updateLinkedSliders('domain', parseInt(this.value));
-            return;
-        }
-        _syncDisplayFromSliders();
-    };
-    if (sd) sd.addEventListener('input', _onDomainSliderInput);
-
-    // ---- 文本权重滑块 ----
-    _onTextSliderInput = function () {
-        if (_linkedBusy) return;
-        if (_configStrategy === 'linked') {
-            _updateLinkedSliders('text', parseInt(this.value));
-            return;
-        }
-        _syncDisplayFromSliders();
-    };
-    if (st) st.addEventListener('input', _onTextSliderInput);
-
-    // ---- 区域权重滑块 ----
-    _onRegionSliderInput = function () {
-        if (_linkedBusy) return;
-        if (_configStrategy === 'linked') {
-            _updateLinkedSliders('region', parseInt(this.value));
-            return;
-        }
-        _syncDisplayFromSliders();
-    };
-    if (sr) sr.addEventListener('input', _onRegionSliderInput);
-
-    // ---- TopN 滑块 ↔ 数字框 双向同步 ----
-    _onTopNSliderInput = function () {
-        if (inputN) inputN.value = this.value;
-    };
-    if (sn) sn.addEventListener('input', _onTopNSliderInput);
-    _onTopNNumberChange = function () {
-        if (sn) sn.value = this.value;
-    };
-    if (inputN) inputN.addEventListener('change', _onTopNNumberChange);
-
-    // ---- text_max_length 滑块 ↔ 数字框 双向同步 ----
-    _onTextLenSliderInput = function () {
-        if (il) il.value = this.value;
-    };
-    if (sl) sl.addEventListener('input', _onTextLenSliderInput);
-    _onTextLenNumberChange = function () {
-        if (sl) sl.value = this.value;
-    };
-    if (il) il.addEventListener('change', _onTextLenNumberChange);
-
-    // ---- 策略切换按钮：事件委托由 main.js 统一处理，此处不再绑定 ----
+    const inN = document.getElementById('input-top-n');
+    if (sn && inN) {
+        const h1 = function () { inN.value = this.value; };
+        const h2 = function () { sn.value = this.value; };
+        sn.addEventListener('input', h1);
+        inN.addEventListener('change', h2);
+        _sliderEventRefs.push({ el: sn, type: 'input', handler: h1 });
+        _sliderEventRefs.push({ el: inN, type: 'change', handler: h2 });
+    }
 }
 
 
-/** 移除所有滑块/按钮事件，防止内存泄漏 */
 function _unbindSliderEvents() {
-    const sd = document.getElementById('slider-domain-weight');
-    const st = document.getElementById('slider-text-weight');
-    const sr = document.getElementById('slider-region-weight');
-    const sn = document.getElementById('slider-top-n');
-    const sl = document.getElementById('slider-text-len');
-    const inputN = document.getElementById('input-top-n');
-    const il = document.getElementById('input-text-len');
-
-    if (sd && _onDomainSliderInput)  sd.removeEventListener('input', _onDomainSliderInput);
-    if (st && _onTextSliderInput)     st.removeEventListener('input', _onTextSliderInput);
-    if (sr && _onRegionSliderInput)   sr.removeEventListener('input', _onRegionSliderInput);
-    if (sn && _onTopNSliderInput)    sn.removeEventListener('input', _onTopNSliderInput);
-    if (sl && _onTextLenSliderInput)  sl.removeEventListener('input', _onTextLenSliderInput);
-    if (inputN && _onTopNNumberChange)    inputN.removeEventListener('change', _onTopNNumberChange);
-    if (il && _onTextLenNumberChange)  il.removeEventListener('change', _onTextLenNumberChange);
-
-    _onDomainSliderInput  = null;
-    _onTextSliderInput     = null;
-    _onRegionSliderInput   = null;
-    _onTopNSliderInput     = null;
-    _onTextLenSliderInput  = null;
-    _onTopNNumberChange    = null;
-    _onTextLenNumberChange = null;
+    for (const ref of _sliderEventRefs) {
+        ref.el.removeEventListener(ref.type, ref.handler);
+    }
+    _sliderEventRefs = [];
 }
 
 
 // ============================================================================
-// 将关键函数挂到全局（供 main.js 事件绑定使用）
+// 暴露到全局（供 main.js）
 // ============================================================================
+
 window.openConfigModal  = openConfigModal;
 window.closeConfigModal = closeConfigModal;
 window.saveConfig       = saveConfig;
 window.cancelConfig     = cancelConfig;
-window.resetConfig     = resetConfig;
-/**
- * 供 main.js 设置当前权重策略（策略按钮点击时调用）。
- * 同时刷新按钮高亮与提示文字，联动策略下自动校正滑块和。
- * @param {'free'|'linked'} strategy
- */
+window.resetConfig      = resetConfig;
+
 window.setConfigStrategy = function (strategy) {
     _configStrategy = strategy;
     _initStrategyButtons();
     _updateStrategyHint();
-    // 切换为联动策略时，强制三个滑块和为 100% (1000)
+
     if (_configStrategy === 'linked') {
         _linkedBusy = true;
-        const sd = document.getElementById('slider-domain-weight');
-        const st = document.getElementById('slider-text-weight');
-        const sr = document.getElementById('slider-region-weight');
-        if (sd && st && sr) {
-            const dVal = parseInt(sd.value) || 0;
-            const tVal = parseInt(st.value) || 0;
-            const rVal = parseInt(sr.value) || 0;
-            const sum = dVal + tVal + rVal || 1;
-            sd.value = Math.round(dVal * 1000 / sum);
-            st.value = Math.round(tVal * 1000 / sum);
-            sr.value = 1000 - parseInt(sd.value) - parseInt(st.value);
+        const dims = State.getDimensions() || [];
+        let sum = 0;
+        const vals = [];
+        for (const dim of dims) {
+            const slider = document.getElementById(`slider-${dim.id}`);
+            const val = slider ? parseInt(slider.value) || 0 : Math.round(dim.default_weight * 1000);
+            vals.push({ dim, slider, val });
+            sum += val;
+        }
+        const safeSum = sum || 1;
+
+        if (vals.length > 0) {
+            let allocated = 0;
+            for (let i = 0; i < vals.length - 1; i++) {
+                const newVal = Math.round(vals[i].val * 1000 / safeSum);
+                vals[i].slider.value = newVal;
+                allocated += newVal;
+            }
+            vals[vals.length - 1].slider.value = 1000 - allocated;
         }
         _syncDisplayFromSliders();
         _linkedBusy = false;

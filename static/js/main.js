@@ -15,18 +15,22 @@
 
 async function init() {
     try {
-        // 并行加载数据和配置
-        const [abilities, opportunities, config] = await Promise.all([
+        // 并行加载数据、配置和维度元信息
+        const [abilities, opportunities, config, dimData] = await Promise.all([
             fetchAbilities(),
             fetchOpportunities(),
-            fetchConfig().catch(() => null),  // 配置加载失败不阻塞页面
+            fetchConfig().catch(() => null),
+            fetchDimensions().catch(() => null),  // v3: 维度元信息
         ]);
 
         // 存入全局状态
         State.setAbilities(abilities);
         State.setOpportunities(opportunities);
-        if (config) {
-            State.setConfig(config);
+        if (config) State.setConfig(config);
+        if (dimData) {
+            State.setDimensions(dimData.dimensions);
+            // 合并维度携带的配置值
+            if (dimData.config && !config) State.setConfig(dimData.config);
         }
 
         // 渲染初始列表（默认能力模式）
@@ -35,7 +39,8 @@ async function init() {
         // 右侧显示空状态
         showEmpty();
 
-        console.log(`[init] 加载完成：${abilities.length} 条能力，${opportunities.length} 条机会`);
+        console.log(`[init] 加载完成：${abilities.length} 条能力，${opportunities.length} 条机会，`
+            + `${(dimData && dimData.dimensions) ? dimData.dimensions.length : 0} 个匹配维度`);
     } catch (err) {
         console.error('[init] 数据加载失败:', err);
         document.getElementById('item-list').innerHTML =
@@ -216,4 +221,35 @@ function bindConfigEvents() {
 document.addEventListener('DOMContentLoaded', () => {
     init();
     bindConfigEvents();
+
+    // ---- 维度删除 / 添加（事件委托，适配动态 DOM） ----
+    const sliderContainer = document.getElementById('config-weight-sliders');
+    if (sliderContainer) {
+        sliderContainer.addEventListener('click', async (e) => {
+            // 删除按钮
+            const deleteBtn = e.target.closest('.dim-delete-btn');
+            if (deleteBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                const dimId = deleteBtn.dataset.dimId;
+                if (!confirm(`确定删除此维度吗？`)) return;
+                try {
+                    await deleteDimensionAPI(dimId);
+                    alert('删除成功！');
+                    if (window.closeConfigModal) window.closeConfigModal();
+                    setTimeout(() => { if (window.openConfigModal) window.openConfigModal(); }, 100);
+                } catch (err) {
+                    alert('删除失败：' + err.message);
+                }
+                return;
+            }
+
+            // 添加维度按钮
+            const addBtn = e.target.closest('#btn-add-dimension');
+            if (addBtn) {
+                e.preventDefault();
+                if (window.openAddDimensionModal) window.openAddDimensionModal();
+            }
+        });
+    }
 });
