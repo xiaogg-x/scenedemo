@@ -1,23 +1,33 @@
-/* add_dimension.css —— 添加/删除维度相关样式 */
+/* ============================================================================
+ * add_dimension.css —— 添加/删除匹配维度相关样式
+ *
+ * 本文件为"添加匹配维度"模态框及其相关控件提供专用样式。
+ * 包括：维度删除按钮、表单输入控件、多选字段面板、全选/取消按钮等。
+ * 依赖 style.css 中定义的 CSS 变量（设计令牌）。
+ * ============================================================================ */
 
-/* 维度删除按钮（每个维度滑块右侧） */
+/* ---- 维度删除按钮 ---- */
+/* 出现在配置模态框中每个维度滑块的右侧，用于删除该匹配维度 */
 .dim-delete-btn {
     margin-left: 8px;
-    background: none;
-    border: 1px solid var(--color-danger, #EF4444);
-    color: var(--color-danger, #EF4444);
+    background: none;                       /* 透明背景 */
+    border: 1px solid var(--color-danger, #EF4444);  /* 红色边框 */
+    color: var(--color-danger, #EF4444);     /* 红色文字 */
     font-size: 12px;
     padding: 2px 8px;
     border-radius: 4px;
     cursor: pointer;
     vertical-align: middle;
 }
+/* hover 时：红色实心背景 + 白色文字，表示危险操作 */
 .dim-delete-btn:hover {
     background: var(--color-danger, #EF4444);
     color: white;
 }
 
-/* 添加维度模态框中的表单元素 */
+/* ---- 添加维度模态框中的表单元素 ---- */
+
+/* 通用文本输入框：用于维度名称、图标、关注角度说明等 */
 .config-text-input {
     width: 100%;
     padding: 8px 12px;
@@ -27,11 +37,13 @@
     outline: none;
     box-sizing: border-box;
 }
+/* 聚焦时：蓝色边框 + 浅蓝色外发光 */
 .config-text-input:focus {
     border-color: var(--color-primary, #2563EB);
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);  /* 外发光效果 */
 }
 
+/* 下拉选择框：用于匹配方法的选择 */
 .config-select {
     width: 100%;
     padding: 8px 12px;
@@ -44,21 +56,26 @@
     box-sizing: border-box;
 }
 .config-select:focus {
-    border-color: var(--color-primary, #2563EB);
+    border-color: var(--color-primary, #2563EB);  /* 聚焦时蓝色边框 */
 }
 
 /* ============================================================
  * 多选字段面板
+ * 用于"能力侧字段"和"机会侧字段"的选择，显示为带滚动条的
+ * checkbox 列表，支持全选/取消操作和已选计数。
  * ============================================================ */
+
+/* 多选面板容器：固定最大高度，内容超出时垂直滚动 */
 .multi-select-box {
-    max-height: 180px;
-    overflow-y: auto;
+    max-height: 180px;               /* 最大高度限制，避免面板过长 */
+    overflow-y: auto;                /* 内容超出时显示滚动条 */
     border: 1px solid var(--color-border, #E2E8F0);
     border-radius: var(--radius-sm, 6px);
     padding: 8px 0;
-    background: #fafbfc;
+    background: #fafbfc;             /* 极浅灰背景，与输入框区分 */
 }
 
+/* 每个 checkbox 选项行 */
 .multi-select-box label {
     display: flex;
     align-items: center;
@@ -66,25 +83,29 @@
     padding: 5px 12px;
     cursor: pointer;
     font-size: 13px;
-    transition: background 0.15s;
+    transition: background 0.15s;    /* hover 背景色平滑过渡 */
 }
+/* 选项行 hover：浅蓝色背景 */
 .multi-select-box label:hover {
     background: rgba(37, 99, 235, 0.06);
 }
 
+/* checkbox 样式：使用 accent-color 统一主题色 */
 .multi-select-box input[type="checkbox"] {
-    accent-color: var(--color-primary, #2563EB);
-    flex-shrink: 0;
+    accent-color: var(--color-primary, #2563EB);  /* 选中状态的主题色 */
+    flex-shrink: 0;                  /* 不被压缩 */
 }
 
-/* 全选/取消 按钮行 */
+/* ---- 全选/取消 按钮行 ---- */
+/* 出现在多选面板顶部，提供"全选"和"取消全选"快捷操作 */
 .multi-select-actions {
     display: flex;
     gap: 6px;
     padding: 4px 8px;
-    border-bottom: 1px solid var(--color-border, #E2E8F0);
+    border-bottom: 1px solid var(--color-border, #E2E8F0);  /* 与下方选项分隔 */
     margin-bottom: 0;
 }
+/* 全选/取消按钮：小尺寸，灰色边框，hover 变蓝色实心 */
 .multi-select-actions button {
     background: none;
     border: 1px solid var(--color-border, #CBD5E1);
@@ -100,7 +121,8 @@
     border-color: var(--color-primary, #2563EB);
 }
 
-/* 已选计数 */
+/* ---- 已选计数标签 ---- */
+/* 显示在多选面板标题旁，如"（已选 3 项）"或"（未选择）" */
 .multi-select-count {
     font-size: 12px;
     color: var(--color-text-secondary, #64748B);

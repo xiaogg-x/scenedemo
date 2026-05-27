@@ -19,7 +19,8 @@
     "icon": "🔍",
     "score_label": "领域",
     "color": "#3B82F6",
-    "params": {}
+    "params": {},
+    "focus_description": "关注场景能力所属产业领域与场景机会欢迎合作方向之间的关联度。"
   },
   {
     "id": "text",
@@ -50,7 +51,8 @@
         "step": 10,
         "slider_max": 2000
       }
-    }
+    },
+    "focus_description": "关注能力概述/意向客户与机会概述/合作方向在关键词层面的文本重叠度。"
   },
   {
     "id": "region",
@@ -72,7 +74,8 @@
     "icon": "📍",
     "score_label": "区域",
     "color": "#F59E0B",
-    "params": {}
+    "params": {},
+    "focus_description": "关注场景能力提供方所在区域与场景机会需求方所在区域的地理位置匹配度。"
   },
   {
     "label": "新增匹配",
@@ -112,6 +115,7 @@
         "max": 1.0,
         "step": 0.05
       }
-    }
+    },
+    "focus_description": "通过语义向量模型评估能力描述与机会描述在深层语义上的相似度，超越关键词层面。"
   }
 ]

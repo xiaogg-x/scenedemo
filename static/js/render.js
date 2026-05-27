@@ -1,29 +1,55 @@
 /**
  * render.js —— DOM 渲染模块 (v3：维度注册表驱动)
  *
- * 职责：所有 HTML 元素的创建和更新都集中在此模块。
- * v3 核心变化：
+ * 【模块定位】
+ *   本模块是整个前端 SPA 的视图层核心，负责所有 HTML 元素的创建、更新和事件处理。
+ *   不直接调用后端 API（由 api.js 负责），也不管理应用状态（由 state.js 负责），
+ *   而是通过 State.get* / State.set* 读取和写入状态，驱动 UI 渲染。
+ *
+ * 【v3 核心变化】
  *   - 权重滑块由 /api/dimensions 动态生成，不再硬编码 3 个
  *   - 匹配详情卡片遍历 dimension_scores 渲染，不再硬编码维度
  *   - 联动滑块逻辑泛化为 N 维通用算法
+ *
+ * 【导出的全局函数（挂载到 window，供 main.js 调用）】
+ *   - openConfigModal / closeConfigModal / saveConfig / cancelConfig / resetConfig
+ *   - setConfigStrategy
+ *   - _toggleExplain / _refreshExplain（挂载到 window，由 onclick 内联调用）
  */
+
 
 // ============================================================================
 // 工具函数
 // ============================================================================
 
+/**
+ * 截断超长文本，超过 maxLen 的部分用省略号替代。
+ * 用于列表项、卡片标题等空间的有限展示场景。
+ *
+ * @param {string} text   - 原始文本
+ * @param {number} maxLen - 最大字符数
+ * @returns {string} 截断后的文本（或空字符串）
+ */
 function truncateText(text, maxLen) {
     if (!text) return '';
     return text.length > maxLen ? text.substring(0, maxLen) + '...' : text;
 }
 
+/**
+ * 将纯文本转换为安全的 HTML，实现换行符 → <br> 的转换。
+ * 同时对 HTML 特殊字符（& < >）进行转义，防止 XSS 注入。
+ * 用于卡片详情文本、LLM 解释等用户/后端生成的内容展示。
+ *
+ * @param {string} text - 原始纯文本（可能含换行符）
+ * @returns {string} 转义后的 HTML 字符串
+ */
 function nl2br(text) {
     if (!text) return '';
     const escaped = text
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
-    return escaped.replace(/\n/g, '<br>');
+        .replace(/&/g, '&amp;')      // 转义 & 符号
+        .replace(/</g, '&lt;')       // 转义 < 符号
+        .replace(/>/g, '&gt;');      // 转义 > 符号
+    return escaped.replace(/\n/g, '<br>');  // 换行符 → <br>
 }
 
 
@@ -33,11 +59,16 @@ function nl2br(text) {
 
 /**
  * 生成多色百分比进度条。
- * v3：接受 dimension_scores 对象，自动按维度颜色渲染。
  *
- * @param {object} dimScores - {dimId: {score, weight}, ...}
- * @param {float} totalScore  - 综合得分
- * @returns {string} HTML 字符串
+ * v3：接受 dimension_scores 对象，自动按维度颜色渲染。
+ * 进度条的每个色块代表一个维度的加权贡献（score × weight）。
+ *
+ * 例如 3 个维度的贡献分别为 34%、21%、35%，则渲染为
+ * [蓝色34%][绿色21%][橙色35%] 的综合进度条。
+ *
+ * @param {object} dimScores - {dimId: {score, weight}, ...} 各维度的原始分和权重
+ * @param {float} totalScore  - 综合得分（Σ score×weight）
+ * @returns {string} HTML 字符串，包含进度条容器和综合百分比标签
  */
 /**
  * 生成多色百分比进度条。
@@ -53,13 +84,14 @@ function nl2br(text) {
  * @returns {string} HTML 字符串
  */
 function scoreBar(dimScores, totalScore) {
+    // 综合得分转百分比，保留 1 位小数
     const totalPct = (totalScore * 100).toFixed(1);
 
     // 获取维度注册表顺序，确保色块按定义顺序排列
     const dims = State.getDimensions() || [];
     const dimOrder = dims.map(d => d.id);
 
-    // 筛选有贡献的维度（score × weight > 0）
+    // 筛选有贡献的维度（score × weight > 0），跳过无贡献的维度以简化显示
     const activeDims = [];
     for (const dimId of dimOrder) {
         const ds = dimScores[dimId];
@@ -69,25 +101,26 @@ function scoreBar(dimScores, totalScore) {
         activeDims.push({ dimId, ds, contribPct });
     }
 
-    // 构建色块 HTML
+    // 构建色块 HTML —— 每个有贡献的维度生成一个 <div> 色条
     let barsHtml = '';
     for (let i = 0; i < activeDims.length; i++) {
         const { dimId, ds, contribPct } = activeDims[i];
-        const dim = State.getDimensionById(dimId);
-        const color = dim ? dim.color : '#94A3B8';
-        const label = dim ? dim.score_label : dimId;
+        const dim = State.getDimensionById(dimId);    // 从注册表查找维度元信息
+        const color = dim ? dim.color : '#94A3B8';    // 维度颜色（兜底灰色）
+        const label = dim ? dim.score_label : dimId;   // 维度显示名称
 
         // 圆角逻辑：单色块全圆角，多色块首尾各有圆角，中间无圆角
         let borderRadius = '0';
         if (activeDims.length === 1) {
-            borderRadius = '4px';
+            borderRadius = '4px';                          // 唯一色块 → 全圆角
         } else if (i === 0) {
-            borderRadius = '4px 0 0 4px';
+            borderRadius = '4px 0 0 4px';                 // 首个色块 → 左侧圆角
         } else if (i === activeDims.length - 1) {
-            borderRadius = '0 4px 4px 0';
+            borderRadius = '0 4px 4px 0';                 // 末尾色块 → 右侧圆角
         }
+        // 中间色块 borderRadius 保持 '0'（无圆角），与相邻色块无缝衔接
 
-        // title 属性：悬停时显示详细贡献信息
+        // title 属性：鼠标悬停时显示该维度的详细贡献信息（原始分 × 权重 = 贡献%）
         const rawPct = (ds.score * 100).toFixed(0);
         const weightPct = (ds.weight * 100).toFixed(0);
         barsHtml += `<div class="score-bar-${dimId}"
@@ -96,6 +129,7 @@ function scoreBar(dimScores, totalScore) {
         </div>`;
     }
 
+    // 返回进度条容器：内含 flex 布局的色条 + 右侧综合得分百分比标签
     return `
         <div class="score-bar-container">
             <div class="score-bar">${barsHtml}</div>
@@ -106,28 +140,40 @@ function scoreBar(dimScores, totalScore) {
 
 
 // ============================================================================
-// 左侧列表渲染 (不变)
+// 左侧列表渲染
 // ============================================================================
 
+/**
+ * 渲染左侧数据列表（能力列表或机会列表）。
+ *
+ * 根据当前模式（State.getMode()）从 State 中取出对应的列表数据，
+ * 为每条记录生成一个列表项 DOM，显示序号、名称、公司/区域、领域标签等。
+ * 选中项（State.getSelectedId()）会高亮显示。
+ *
+ * 列表项通过 data-id 和 data-mode 属性标记，供 main.js 中的点击事件使用。
+ */
 function renderList() {
     const listEl = document.getElementById('item-list');
     if (!listEl) return;
 
-    const mode  = State.getMode();
-    const items = State.getCurrentList();
-    const selectedId = State.getSelectedId();
+    const mode  = State.getMode();           // 当前模式：'ability' 或 'opportunity'
+    const items = State.getCurrentList();    // 当前模式下的数据列表
+    const selectedId = State.getSelectedId(); // 当前选中的记录 ID
 
+    // 空列表 → 显示占位提示
     if (!items || items.length === 0) {
         listEl.innerHTML = '<div class="list-empty">暂无数据</div>';
         return;
     }
 
+    // 遍历列表数据，为每条记录生成列表项 HTML
     let html = '';
     items.forEach((item, idx) => {
         const isActive = item.id === selectedId;
         const activeCls = isActive ? 'list-item active' : 'list-item';
 
         if (mode === 'ability') {
+            // 能力列表项：显示序号、名称、公司、领域标签、区域标签
             html += `
                 <div class="${activeCls}" data-id="${item.id}" data-mode="ability">
                     <span class="item-index">${idx + 1}</span>
@@ -140,6 +186,7 @@ function renderList() {
                 </div>
             `;
         } else {
+            // 机会列表项：显示序号、名称、面积、领域标签（无区域标签）
             html += `
                 <div class="${activeCls}" data-id="${item.id}" data-mode="opportunity">
                     <span class="item-index">${idx + 1}</span>
@@ -155,9 +202,11 @@ function renderList() {
 
     listEl.innerHTML = html;
 
+    // 更新底部的列表计数标签
     const countEl = document.getElementById('list-count');
     if (countEl) countEl.textContent = `共 ${items.length} 条`;
 
+    // 更新顶栏左侧的模式标签（"场景能力列表" 或 "场景机会列表"）
     const titleEl = document.getElementById('mode-label');
     if (titleEl) titleEl.textContent = mode === 'ability' ? '场景能力列表' : '场景机会列表';
 }
@@ -167,11 +216,24 @@ function renderList() {
 // 参数面板渲染 (v3：动态维度)
 // ============================================================================
 
+/**
+ * 渲染右侧顶部的匹配参数概览面板。
+ *
+ * 该面板展示当前匹配使用的参数摘要，包括：
+ *   - 各维度权重百分比
+ *   - Top N 返回条数
+ *   - 文本截取字数
+ *
+ * 参数面板用于让用户在不打开配置模态框的情况下，快速了解当前匹配参数。
+ *
+ * @param {object|null} config - 匹配配置对象，null 时清空面板
+ */
 function renderConfigPanel(config) {
     const panelEl = document.getElementById('config-panel');
     if (!panelEl) return;
     if (!config) { panelEl.innerHTML = ''; return; }
 
+    // 遍历维度注册表，生成各维度的权重显示标签
     const dims = State.getDimensions() || [];
     let dimItems = '';
     for (let i = 0; i < dims.length; i++) {
@@ -181,6 +243,7 @@ function renderConfigPanel(config) {
         if (i < dims.length - 1) dimItems += '<span class="config-sep">|</span>';
     }
 
+    // 拼装面板 HTML：维度权重 + TopN + 截取字数，用分隔符 | 连接
     panelEl.innerHTML = `
         <div class="config-panel-inner">
             <span class="config-panel-title">⚙ 匹配参数</span>
@@ -198,11 +261,27 @@ function renderConfigPanel(config) {
 // 右侧卡片渲染 (v3：动态维度详情)
 // ============================================================================
 
+/**
+ * 渲染右侧匹配结果卡片列表。
+ *
+ * 这是视图层最复杂的函数，负责将后端返回的匹配结果渲染为完整的卡片 DOM。
+ * 每张卡片的结构：
+ *   1) 排名徽章（#1/#2/#3）+ 标题 + 领域标签
+ *   2) 字段对照表（源字段 → 目标字段的双列对比）
+ *   3) 各维度的匹配详情（按维度注册表顺序遍历）：
+ *      - bigram 类型：重叠关键词统计 + 文本摘要 + bigram 标签
+ *      - vector 类型：余弦相似度 + 阈值 + 文本摘要 + LLM 推理
+ *      - 其他类型：纯文本展示
+ *   4) 得分进度条（多色综合进度条）
+ *   5) LLM 解释按钮 + 流式内容区域
+ *
+ * @param {object} data - 匹配结果数据，包含 source（选中源）、config（配置）、matches（匹配列表）
+ */
 function renderCards(data) {
     const cardsEl = document.getElementById('match-cards');
     if (!cardsEl) return;
 
-    // 选中源信息
+    // ---- 更新右侧顶部的选中源信息 ----
     if (data && data.source) {
         const src = data.source;
         const srcTitleEl = document.getElementById('source-title');
@@ -211,27 +290,30 @@ function renderCards(data) {
         if (srcSubEl) srcSubEl.textContent = src.company || src.domain || '';
     }
 
-    // 参数面板
+    // ---- 更新参数概览面板 ----
     if (data && data.config) renderConfigPanel(data.config);
 
+    // 无匹配结果 → 显示空状态
     if (!data || !data.matches || data.matches.length === 0) {
         cardsEl.innerHTML = '<div class="cards-empty">未找到匹配项</div>';
         return;
     }
 
+    // 前三名排名徽章颜色：蓝、绿、黄，其余灰色
     const rankColors = ['#3B82F6', '#22C55E', '#F59E0B'];
-    const dims = State.getDimensions() || [];
+    const dims = State.getDimensions() || [];  // 维度注册表
 
     let html = '';
 
+    // ---- 遍历每条匹配结果，生成卡片 ----
     data.matches.forEach((m, idx) => {
-        const t = m.target;
-        const rankColor = rankColors[idx] || '#94A3B8';
-        const sf = m.source_fields || {};
-        const tf = m.target_fields || {};
-        const dimScores = m.dimension_scores || {};
+        const t = m.target;                    // 匹配目标（能力或机会）
+        const rankColor = rankColors[idx] || '#94A3B8';  // 排名颜色
+        const sf = m.source_fields || {};       // 源字段对照
+        const tf = m.target_fields || {};       // 目标字段对照
+        const dimScores = m.dimension_scores || {};  // 各维度得分
 
-        // 1) 排名徽章 + 标题
+        // 1) 排名徽章 + 卡片头部（标题 + 领域标签）
         html += `
         <div class="match-card">
             <div class="card-rank" style="background:${rankColor}">#${idx + 1}</div>
@@ -240,13 +322,14 @@ function renderCards(data) {
                 <span class="card-tag">${t.domain || ''}</span>
             </div>`;
 
-        // 2) 字段对照表
+        // 2) 字段对照表：将源字段和目标字段按行并排展示
         html += '<div class="card-section"><div class="card-section-title">📋 匹配字段对照</div>';
         html += '<div class="field-compare">';
-        const sfKeys = Object.keys(sf);
-        const tfKeys = Object.keys(tf);
+        const sfKeys = Object.keys(sf);   // 源字段名列表
+        const tfKeys = Object.keys(tf);   // 目标字段名列表
         const maxLen = Math.max(sfKeys.length, tfKeys.length);
         for (let i = 0; i < maxLen; i++) {
+            // 取对应位置的字段名和值（不足的用空字符串填充）
             const sKey = sfKeys[i] || '';
             const tKey = tfKeys[i] || '';
             const sVal = sf[sKey] ? truncateText(sf[sKey], 60) : '';
@@ -266,13 +349,15 @@ function renderCards(data) {
         }
         html += '</div></div>';
 
-        // 3) 遍历维度详情
+        // 3) 遍历维度注册表，渲染每个维度的匹配详情
         for (const dim of dims) {
             const dimId = dim.id;
+            // 获取该维度的得分数据（score 原始分、detail 详情、weight 权重）
             const ds = dimScores[dimId] || { score: 0, detail: '', weight: 0 };
-            const rawScore = (ds.score * 100);
-            const contrib = (ds.score * ds.weight * 100);
+            const rawScore = (ds.score * 100);           // 原始分转百分比
+            const contrib = (ds.score * ds.weight * 100); // 加权贡献转百分比
 
+            // 维度分区标题：显示维度图标 + 名称 + 原始得分 + 加权贡献
             html += `<div class="card-section">
                 <div class="card-section-title">
                     ${dim.icon || ''} ${dim.label}
@@ -280,12 +365,13 @@ function renderCards(data) {
                     <span class="section-score section-score-weighted">加权贡献：${contrib.toFixed(0)}%</span>
                 </div>`;
 
+            // ---- 根据维度类型渲染不同的详情内容 ----
             if (dim.detail_type === 'bigram') {
-                // 文本匹配详情
+                // [bigram 类型] 文本匹配详情：基于 2-gram 交集/并集计算相似度
                 const td = ds.detail || {};
-                const bigrams = td.overlapping_bigrams || [];
-                const overlapCnt = td.overlap_count || 0;
-                const unionCnt = td.union_count || 0;
+                const bigrams = td.overlapping_bigrams || [];  // 重叠的 2-gram 列表
+                const overlapCnt = td.overlap_count || 0;       // 交集大小
+                const unionCnt = td.union_count || 0;           // 并集大小
 
                 html += `
                 <div class="text-stats">
@@ -310,6 +396,7 @@ function renderCards(data) {
                     <div class="text-snippet-val">${td.text_b_snippet || '--'}</div>
                 </div>`;
 
+                // 渲染重叠关键词标签列表
                 if (bigrams.length > 0) {
                     html += '<div class="bigram-tags"><span class="bigram-tags-label">重叠关键词(2-gram)：</span>';
                     bigrams.forEach(bg => { html += `<span class="bigram-tag">${bg}</span>`; });
@@ -318,10 +405,10 @@ function renderCards(data) {
                     html += '<div class="bigram-tags"><span class="bigram-tags-empty">无重叠关键词</span></div>';
                 }
             } else if (dim.detail_type === 'vector') {
-                // 语义向量匹配详情
+                // [vector 类型] 语义向量匹配详情：基于文本嵌入的余弦相似度
                 const vd = (typeof ds.detail === 'object' && ds.detail) ? ds.detail : {};
-                const simPct = ((vd.similarity || 0) * 100).toFixed(1);
-                const thresholdPct = ((vd.threshold || 0) * 100).toFixed(0);
+                const simPct = ((vd.similarity || 0) * 100).toFixed(1);     // 相似度百分比
+                const thresholdPct = ((vd.threshold || 0) * 100).toFixed(0); // 最低阈值百分比
 
                 html += `
                 <div class="text-stats">
@@ -342,17 +429,43 @@ function renderCards(data) {
                 </div>
                 <div class="card-detail-text">${nl2br(vd.reason || '无匹配信息')}</div>`;
             } else {
-                // 文本/区域等通用文本详情
+                // [其他类型] 通用文本详情：直接显示 detail 文本（如区域匹配说明）
                 html += `<div class="card-detail-text">${nl2br(ds.detail || '无匹配信息')}</div>`;
             }
 
             html += '</div>';
         }
 
-        // 4) 得分进度条
+        // 4) 综合得分进度条（多色，各维度色块叠加）
         html += scoreBar(dimScores, m.total_score);
 
-        html += '</div>';
+        // 5) LLM 解释交互区域
+        //    - 展开/收起按钮（首次展开自动请求 AI 解释）
+        //    - 刷新按钮（强制清除后端缓存后重新请求）
+        //    - 流式文本显示区（通过 SSE 实时更新）
+        html += `
+        <div class="explain-section">
+            <button class="explain-btn"
+                    data-ability-id="${data.source.id}"
+                    data-opp-id="${t.id}"
+                    data-match-idx="${idx}"
+                    data-mode="${State.getMode()}"
+                    onclick="window._toggleExplain(this)">
+                🤖 查看 AI 解释
+            </button>
+            <div class="explain-content" style="display:none;">
+                <div class="explain-toolbar">
+                    <button class="explain-refresh-btn"
+                            onclick="window._refreshExplain(this.parentElement.parentElement)">
+                        🔄 刷新解释
+                    </button>
+                    <span class="explain-status"></span>
+                </div>
+                <div class="explain-text"></div>
+            </div>
+        </div>`;
+
+        html += '</div>';  // 关闭 .match-card
     });
 
     cardsEl.innerHTML = html;
@@ -360,9 +473,14 @@ function renderCards(data) {
 
 
 // ============================================================================
-// 状态占位渲染
+// 状态占位渲染（加载中 / 空状态）
 // ============================================================================
 
+/**
+ * 显示匹配加载中的占位 UI。
+ * 在发起匹配请求后立即调用，展示旋转加载动画和提示文字。
+ * 同时清空参数面板，避免显示过期参数。
+ */
 function showLoading() {
     const cardsEl = document.getElementById('match-cards');
     if (!cardsEl) return;
@@ -374,6 +492,10 @@ function showLoading() {
     renderConfigPanel(null);
 }
 
+/**
+ * 显示右侧空状态占位 UI。
+ * 在用户尚未选择任何列表项时显示，引导用户点击左侧列表。
+ */
 function showEmpty() {
     const cardsEl = document.getElementById('match-cards');
     if (!cardsEl) return;
@@ -391,25 +513,32 @@ function showEmpty() {
 // 配置模态框交互逻辑 (v3：动态维度)
 // ============================================================================
 
-let _configStrategy = 'free';
-let _linkedBusy = false;
+// ---- 模态框内部状态变量 ----
+let _configStrategy = 'free';    // 当前权重调整策略：'free'（自由）/ 'linked'（联动）
+let _linkedBusy = false;         // 联动模式锁，防止滑块 input 事件递归触发
 
-/** 所有动态注册的滑块事件引用，方便解绑 */
+/** 所有动态注册的滑块事件引用，方便关闭模态框时批量解绑，避免内存泄漏 */
 let _sliderEventRefs = [];
 
 
+/**
+ * 重新发起当前选中项的匹配请求并刷新卡片。
+ * 在配置保存后、且配置有变化时自动调用。
+ * 根据当前模式（ability/opportunity）选择对应的 API 请求函数。
+ */
 async function _refetchCurrentMatch() {
     const selectedId = State.getSelectedId();
     if (selectedId == null) return;
-    showLoading();
+    showLoading();   // 显示加载中占位
     try {
         const mode = State.getMode();
         let result;
         if (mode === 'ability') {
-            result = await fetchMatchForAbility(selectedId);
+            result = await fetchMatchForAbility(selectedId);    // 能力 → 机会匹配
         } else {
-            result = await fetchMatchForOpportunity(selectedId);
+            result = await fetchMatchForOpportunity(selectedId); // 机会 → 能力匹配
         }
+        // 更新 State 中的配置缓存并重新渲染卡片
         if (result && result.config) State.setConfig(result.config);
         renderCards(result);
     } catch (err) {
@@ -421,6 +550,13 @@ async function _refetchCurrentMatch() {
 }
 
 
+/**
+ * 比较新配置与备份配置，判断是否有关键参数变化。
+ * 仅检查影响匹配结果的字段：top_n、各维度权重（*_weight）、截取长度（*_length）。
+ *
+ * @param {object} newConfig - 新的配置对象
+ * @returns {boolean} 是否有变化
+ */
 function _configHasChanged(newConfig) {
     const backup = State.getConfigBackup();
     if (!backup) return true;
@@ -449,6 +585,10 @@ function _configHasChanged(newConfig) {
  *   - 0% / 50% / 100% 刻度标签
  *
  * 最后追加一个「➕ 添加匹配维度」按钮。
+ *
+ * @param {Array} dims   - 维度注册表数组
+ * @param {object} config - 当前配置对象
+ * @returns {string} 各维度滑块的 HTML 字符串
  */
 function _buildWeightSlidersHTML(dims, config) {
     let html = '';
@@ -485,15 +625,21 @@ function _buildWeightSlidersHTML(dims, config) {
 
 /**
  * 生成维度私有参数表单（如文本匹配的 max_length）。
+ * 遍历每个维度的 params 定义，为每个参数生成滑块 + 数字输入框的双向联动控件。
+ *
+ * @param {Array} dims   - 维度注册表数组
+ * @param {object} config - 当前配置对象
+ * @returns {string} 参数表单的 HTML 字符串
  */
 function _buildDimParamsHTML(dims, config) {
     let html = '';
     for (const dim of dims) {
-        if (!dim.params) continue;
+        if (!dim.params) continue;  // 该维度无私有参数则跳过
         for (const pk in dim.params) {
             const pv = dim.params[pk];
-            const configKey = pv.config_key || `${dim.id}_${pk}`;
-            const val = config[configKey] != null ? config[configKey] : pv.default;
+            const configKey = pv.config_key || `${dim.id}_${pk}`;  // 配置对象中的键名
+            const val = config[configKey] != null ? config[configKey] : pv.default;  // 当前值或默认值
+            // 滑块和数字输入框并排，双向联动
             html += `
             <div class="config-section">
                 <div class="config-label">${pv.label}（${configKey}）</div>
@@ -517,14 +663,24 @@ function _buildDimParamsHTML(dims, config) {
 
 // ---- 打开/关闭模态框 ----
 
+/**
+ * 打开配置模态框。
+ *
+ * 流程：
+ *   1) 确保维度元信息已加载（首次打开时从 /api/dimensions 获取）
+ *   2) 备份当前配置（用于关闭时恢复 / 保存时比较变化）
+ *   3) 动态生成权重滑块和维度私有参数
+ *   4) 初始化 TopN 控件值
+ *   5) 设置默认策略为"自由调整"并绑定所有滑块事件
+ */
 async function openConfigModal() {
     // 确保维度已加载
     let dims = State.getDimensions();
     if (!dims || dims.length === 0) {
         try {
-            const data = await fetchDimensions();
+            const data = await fetchDimensions();    // 首次从后端获取维度注册表
             State.setDimensions(data.dimensions);
-            if (data.config) State.setConfig(data.config);
+            if (data.config) State.setConfig(data.config);  // 同步后端返回的默认配置
             dims = data.dimensions;
         } catch (e) {
             console.error('加载维度信息失败:', e);
@@ -533,7 +689,7 @@ async function openConfigModal() {
     }
 
     const cfg = State.getConfig() || State.getDefaultConfig();
-    State.setConfigBackup(cfg);
+    State.setConfigBackup(cfg);  // 备份当前配置，供取消/比较使用
 
     const overlay = document.getElementById('config-overlay');
     if (overlay) overlay.style.display = 'flex';
@@ -568,6 +724,10 @@ async function openConfigModal() {
 }
 
 
+/**
+ * 关闭配置模态框。
+ * 隐藏遮罩层，并解绑所有动态滑块事件（防止内存泄漏）。
+ */
 function closeConfigModal() {
     const overlay = document.getElementById('config-overlay');
     if (overlay) overlay.style.display = 'none';
@@ -597,7 +757,7 @@ async function saveConfig() {
         const slider = document.getElementById(`slider-${dim.id}`);
         const val = slider ? parseInt(slider.value) || 0 : Math.round(dim.default_weight * 1000);
         sumPct += val;
-        newConfig[dim.weight_key] = val / 1000;
+        newConfig[dim.weight_key] = val / 1000;  // 转为 0~1 的权重值
     }
 
     // ---- 自由模式下权重自动缩放 ----
@@ -612,7 +772,7 @@ async function saveConfig() {
             newConfig[weightKeys[i]] = Math.max(0, Math.min(1, scaled));
             scaledSum += newConfig[weightKeys[i]];
         }
-        // 最后一个用减法兜底，保证精度
+        // 最后一个用减法兜底，保证精度（避免浮点累加误差）
         const lastKey = weightKeys[weightKeys.length - 1];
         newConfig[lastKey] = Math.max(0, Math.min(1, Math.round((1 - scaledSum) * 1000) / 1000));
     }
@@ -628,16 +788,17 @@ async function saveConfig() {
         }
     }
 
-    // ---- 3) TopN ----
+    // ---- 3) TopN（限制在 1~20 范围内） ----
     const topN = parseInt(document.getElementById('input-top-n').value) || 3;
     newConfig.top_n = Math.max(1, Math.min(20, topN));
 
     try {
+        // 调用后端 API 保存配置
         const saved = await updateConfigAPI(newConfig);
-        State.setConfig(saved);
-        renderConfigPanel(saved);
-        closeConfigModal();
-        // 如果配置有变化，自动重新匹配
+        State.setConfig(saved);          // 更新本地状态
+        renderConfigPanel(saved);        // 刷新参数概览面板
+        closeConfigModal();              // 关闭模态框
+        // 如果配置有变化，自动重新匹配当前选中项
         if (_configHasChanged(newConfig)) await _refetchCurrentMatch();
     } catch (err) {
         alert('保存失败：' + err.message);
@@ -645,13 +806,19 @@ async function saveConfig() {
 }
 
 
+/** 取消配置编辑，直接关闭模态框（不保存、不恢复旧值） */
 function cancelConfig() { closeConfigModal(); }
 
 
+/**
+ * 重置所有配置控件到默认值。
+ * 遍历维度注册表，将每个权重滑块和私有参数控件重置为默认值。
+ */
 function resetConfig() {
     const dims = State.getDimensions() || [];
     const cfg = State.getConfig() || State.getDefaultConfig();
 
+    // 重置各维度权重滑块到默认值
     for (const dim of dims) {
         const slider = document.getElementById(`slider-${dim.id}`);
         const val = Math.round(dim.default_weight * 1000);
@@ -671,18 +838,26 @@ function resetConfig() {
         }
     }
 
-    // 重置 TopN
+    // 重置 TopN 为默认值 3
     const sn = document.getElementById('slider-top-n');
     const inN = document.getElementById('input-top-n');
     if (sn) sn.value = 3;
     if (inN) inN.value = 3;
 
+    // 刷新所有百分比显示和权重合计条
     _syncDisplayFromSliders();
 }
 
 
 // ---- 内部辅助函数 ----
 
+/**
+ * 更新权重合计条的显示状态。
+ * 读取所有权重滑块的值，计算合计百分比，并根据合计值显示不同状态：
+ *   - 1000（100%）→ 绿色 ✓ 正常
+ *   - 0 → 黄色 ⚠ 均为0
+ *   - 其他 → 黄色 ⚠ 将自动缩放至100%
+ */
 function _updateWeightSum() {
     const dims = State.getDimensions() || [];
     let sum = 0;
@@ -691,6 +866,7 @@ function _updateWeightSum() {
         if (slider) sum += parseInt(slider.value) || 0;
     }
 
+    // 更新合计值文本和状态提示
     const valEl = document.getElementById('weight-sum-val');
     const statusEl = document.getElementById('weight-sum-status');
     const barEl = document.getElementById('weight-sum-bar');
@@ -701,20 +877,27 @@ function _updateWeightSum() {
         else if (sum === 0) statusEl.textContent = '⚠ 均为0';
         else statusEl.textContent = '⚠ 将自动缩放至100%';
     }
+    // 合计不为 1000 时添加警告样式
     if (barEl) barEl.className = 'config-weight-sum' + (sum === 1000 ? '' : ' warning');
 }
 
 
+/**
+ * 从各权重滑块同步更新百分比显示。
+ * 遍历所有维度滑块，读取当前值并更新对应的百分比标签。
+ * 同时调用 _updateWeightSum() 刷新权重合计条。
+ */
 function _syncDisplayFromSliders() {
     const dims = State.getDimensions() || [];
     for (const dim of dims) {
         const slider = document.getElementById(`slider-${dim.id}`);
         const display = document.getElementById(`display-${dim.id}`);
         if (slider && display) {
+            // 滑块值范围 0~1000，显示时 ÷10 得到 0.0%~100.0%
             display.textContent = (parseInt(slider.value) / 10).toFixed(1) + '%';
         }
     }
-    _updateWeightSum();
+    _updateWeightSum();  // 同步刷新权重合计条
 }
 
 
@@ -773,6 +956,10 @@ function _updateLinkedSliders(changedId, newValue) {
 }
 
 
+/**
+ * 初始化策略切换按钮的激活状态。
+ * 遍历策略按钮组，根据当前策略设置 active 类。
+ */
 function _initStrategyButtons() {
     const btns = document.querySelectorAll('#strategy-switch .strategy-btn');
     btns.forEach(btn => {
@@ -781,6 +968,10 @@ function _initStrategyButtons() {
 }
 
 
+/**
+ * 更新策略提示文字。
+ * 根据当前策略（free/linked）显示不同的操作说明。
+ */
 function _updateStrategyHint() {
     const hint = document.getElementById('strategy-hint');
     if (!hint) return;
@@ -805,7 +996,7 @@ function _updateStrategyHint() {
  * 所有事件引用保存在 _sliderEventRefs 中，方便关闭模态框时解绑。
  */
 function _bindSliderEvents() {
-    _unbindSliderEvents();  // 先解绑旧的
+    _unbindSliderEvents();  // 先解绑旧的，防止重复绑定
 
     const dims = State.getDimensions() || [];
 
@@ -817,13 +1008,14 @@ function _bindSliderEvents() {
         const handler = function () {
             if (_linkedBusy) return;  // 联动模式更新中，跳过（防止递归）
             if (_configStrategy === 'linked') {
+                // 联动模式：拖动一个滑块时，按比例自动调整其他滑块
                 _updateLinkedSliders(dim.id, parseInt(this.value));
                 return;
             }
-            _syncDisplayFromSliders();  // 自由模式：只刷新显示
+            _syncDisplayFromSliders();  // 自由模式：只刷新百分比显示
         };
         slider.addEventListener('input', handler);
-        _sliderEventRefs.push({ el: slider, type: 'input', handler });
+        _sliderEventRefs.push({ el: slider, type: 'input', handler });  // 保存引用以便解绑
     }
 
     // ---- 维度私有参数：滑块 ↔ 数字框双向同步 ----
@@ -835,7 +1027,9 @@ function _bindSliderEvents() {
             const numInput = document.getElementById(`input-${configKey}`);
 
             if (paramSlider && numInput) {
+                // 滑块变化 → 同步到数字框
                 const sliderHandler = function () { numInput.value = this.value; };
+                // 数字框变化 → 同步到滑块
                 const numHandler = function () { paramSlider.value = this.value; };
                 paramSlider.addEventListener('input', sliderHandler);
                 numInput.addEventListener('change', numHandler);
@@ -849,8 +1043,8 @@ function _bindSliderEvents() {
     const sn = document.getElementById('slider-top-n');
     const inN = document.getElementById('input-top-n');
     if (sn && inN) {
-        const h1 = function () { inN.value = this.value; };
-        const h2 = function () { sn.value = this.value; };
+        const h1 = function () { inN.value = this.value; };  // 滑块 → 数字框
+        const h2 = function () { sn.value = this.value; };    // 数字框 → 滑块
         sn.addEventListener('input', h1);
         inN.addEventListener('change', h2);
         _sliderEventRefs.push({ el: sn, type: 'input', handler: h1 });
@@ -871,8 +1065,141 @@ function _unbindSliderEvents() {
 
 
 // ============================================================================
-// 暴露到全局（供 main.js）
+// LLM 解释交互逻辑
 // ============================================================================
+
+/** 存储正在进行的 SSE 请求控制器，用于取消（key 格式：abilityId-oppId） */
+const _explainControllers = {};
+
+/**
+ * 切换解释区域的显示/隐藏。
+ * 首次展开时自动触发 LLM 请求；再次点击则收起并取消进行中的请求。
+ */
+window._toggleExplain = function (btn) {
+    const section = btn.parentElement;
+    const content = section.querySelector('.explain-content');
+    const textEl = section.querySelector('.explain-text');
+    const statusEl = section.querySelector('.explain-status');
+
+    if (!content || !textEl) return;
+
+    // 如果已展开 → 收起，并取消进行中的 SSE 请求
+    if (content.style.display !== 'none') {
+        content.style.display = 'none';
+        btn.textContent = '🤖 查看 AI 解释';
+        const key = _explainKey(section);
+        if (_explainControllers[key]) {
+            _explainControllers[key].abort();  // 取消进行中的 SSE 流
+            delete _explainControllers[key];
+        }
+        return;
+    }
+
+    // 展开
+    content.style.display = 'block';
+    btn.textContent = '🤖 收起 AI 解释';
+
+    // 如果已有解释文本 → 不重复请求（避免浪费 token）
+    if (textEl.textContent.trim()) return;
+
+    // 发起 LLM 解释请求（非强制刷新模式）
+    _doExplain(section, false);
+};
+
+/**
+ * 刷新解释（清除后端缓存后重新请求）。
+ * 由卡片内"🔄 刷新解释"按钮触发。
+ */
+window._refreshExplain = function (refreshBtn) {
+    const section = refreshBtn.closest('.explain-content').parentElement;
+    const textEl = section.querySelector('.explain-text');
+    const statusEl = section.querySelector('.explain-status');
+    if (textEl) textEl.textContent = '';   // 清空旧解释
+    if (statusEl) statusEl.textContent = '';
+
+    // 发起 LLM 解释请求（强制刷新模式，忽略后端缓存）
+    _doExplain(section, true);
+};
+
+/** 生成解释区域的唯一 key（基于能力 ID 和机会 ID），用于管理 SSE 请求控制器 */
+function _explainKey(section) {
+    const btn = section.querySelector('.explain-btn');
+    if (!btn) return '';
+    return `${btn.dataset.abilityId}-${btn.dataset.oppId}`;
+}
+
+/**
+ * 发起 SSE（Server-Sent Events）流式解释请求。
+ *
+ * 通过 api.js 中的 fetchExplain 函数与后端通信：
+ *   - onChunk：每收到一段文本就追加到显示区域（实现打字机效果）
+ *   - onDone：流式传输完成，显示完成/缓存状态
+ *   - onError：请求失败，显示错误信息
+ *
+ * @param {HTMLElement} section     - 解释区域的 DOM 容器
+ * @param {boolean} forceRefresh    - 是否强制刷新（true 则清除后端缓存后重新生成）
+ */
+function _doExplain(section, forceRefresh) {
+    const btn = section.querySelector('.explain-btn');
+    const textEl = section.querySelector('.explain-text');
+    const statusEl = section.querySelector('.explain-status');
+
+    if (!btn || !textEl) return;
+
+    // 从按钮的 data-* 属性中提取请求参数
+    const abilityId = parseInt(btn.dataset.abilityId);
+    const oppId = parseInt(btn.dataset.oppId);
+    const matchIdx = parseInt(btn.dataset.matchIdx);
+    const mode = btn.dataset.mode;
+
+    if (isNaN(abilityId) || isNaN(oppId)) {
+        textEl.textContent = '[错误] 无法获取匹配 ID';
+        return;
+    }
+
+    // 如果有正在进行的请求，先取消（避免多个请求同时写入同一区域）
+    const key = _explainKey(section);
+    if (_explainControllers[key]) {
+        _explainControllers[key].abort();
+        delete _explainControllers[key];
+    }
+
+    // 清空旧内容，显示加载状态
+    textEl.textContent = '';
+    if (statusEl) statusEl.textContent = '⏳ 正在生成...';
+
+    // 发起 SSE 流式请求
+    const controller = fetchExplain(
+        { ability_id: abilityId, opp_id: oppId, match_index: matchIdx, mode, force_refresh: forceRefresh },
+        // onChunk —— 每收到一段文本就追加（打字机效果）
+        (chunk) => {
+            textEl.textContent += chunk;
+        },
+        // onDone —— 流式传输完成
+        ({ cached }) => {
+            if (statusEl) {
+                statusEl.textContent = cached ? '✅ 已缓存' : '✅ 生成完成';
+            }
+            delete _explainControllers[key];  // 清除请求引用
+        },
+        // onError —— 请求失败
+        (error) => {
+            textEl.textContent = `[错误] ${error}`;
+            if (statusEl) statusEl.textContent = '❌ 请求失败';
+            delete _explainControllers[key];
+        }
+    );
+
+    // 保存 AbortController 引用，以便收起时可以取消请求
+    _explainControllers[key] = controller;
+}
+
+
+// ============================================================================
+// 暴露到全局（供 main.js 调用）
+// ============================================================================
+// 以下函数通过 window 对象导出，因为项目采用原生 JS 无打包工具，
+// 各模块通过全局变量进行跨文件通信。
 
 window.openConfigModal  = openConfigModal;
 window.closeConfigModal = closeConfigModal;
@@ -880,13 +1207,20 @@ window.saveConfig       = saveConfig;
 window.cancelConfig     = cancelConfig;
 window.resetConfig      = resetConfig;
 
+/**
+ * 设置权重调整策略（free / linked）。
+ * 切换为联动模式时，立即将所有滑块按当前比例重新归一化到合计 1000。
+ *
+ * @param {string} strategy - 'free'（自由调整）或 'linked'（联动调整）
+ */
 window.setConfigStrategy = function (strategy) {
     _configStrategy = strategy;
     _initStrategyButtons();
     _updateStrategyHint();
 
+    // 切换到联动模式时，立即对当前值进行归一化
     if (_configStrategy === 'linked') {
-        _linkedBusy = true;
+        _linkedBusy = true;  // 上锁防止事件递归
         const dims = State.getDimensions() || [];
         let sum = 0;
         const vals = [];
@@ -896,8 +1230,9 @@ window.setConfigStrategy = function (strategy) {
             vals.push({ dim, slider, val });
             sum += val;
         }
-        const safeSum = sum || 1;
+        const safeSum = sum || 1;  // 避免除零
 
+        // 按比例归一化到合计 1000
         if (vals.length > 0) {
             let allocated = 0;
             for (let i = 0; i < vals.length - 1; i++) {
@@ -905,9 +1240,10 @@ window.setConfigStrategy = function (strategy) {
                 vals[i].slider.value = newVal;
                 allocated += newVal;
             }
+            // 最后一个用减法兜底，保证合计精确 = 1000
             vals[vals.length - 1].slider.value = 1000 - allocated;
         }
         _syncDisplayFromSliders();
-        _linkedBusy = false;
+        _linkedBusy = false;  // 解锁
     }
 };

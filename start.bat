@@ -7,6 +7,10 @@ echo.
 
 cd /d "%~dp0"
 
+:: 设置 HuggingFace 国内镜像（避免访问 huggingface.co 超时）
+set HF_ENDPOINT=https://hf-mirror.com
+set HF_HUB_DISABLE_IMPLICIT_TOKEN=1
+
 :: 设置 conda 虚拟环境
 set CONDA_ENV=scenedemo
 set CONDA_PYTHON=%USERPROFILE%\.conda\envs\%CONDA_ENV%\python.exe

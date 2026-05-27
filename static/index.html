@@ -1,9 +1,12 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
+    <!-- 页面元信息：UTF-8 编码、响应式视口 -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>场景机会与能力匹配 Demo</title>
+
+    <!-- 样式表加载顺序：主样式 → 添加维度专用样式 -->
     <link rel="stylesheet" href="/css/style.css">
     <link rel="stylesheet" href="/css/add_dimension.css">
 </head>
@@ -11,14 +14,18 @@
 
     <!-- ================================================================ -->
     <!-- 顶部标题栏                                                       -->
+    <!-- 三栏布局：左侧模式标签 | 中间应用标题 | 右侧操作按钮组           -->
     <!-- ================================================================ -->
     <header class="topbar">
+        <!-- 左侧：当前模式标签（"场景能力列表" / "场景机会列表"），由 JS 动态更新 -->
         <div class="topbar-left">
             <span id="mode-label" class="mode-label">场景能力列表</span>
         </div>
+        <!-- 中间：应用名称 -->
         <div class="topbar-center">
             <h1 class="app-title">场景机会与能力匹配</h1>
         </div>
+        <!-- 右侧：齿轮设置按钮 + 模式切换按钮组（能力→机会 / 机会→能力） -->
         <div class="topbar-right">
             <button id="btn-config" class="icon-btn" title="匹配参数设置">⚙</button>
             <button id="btn-ability-mode" class="toggle-btn active">
@@ -32,37 +39,44 @@
 
     <!-- ================================================================ -->
     <!-- 主体双栏布局                                                     -->
+    <!-- 左侧：数据列表（固定宽度 380px）                                  -->
+    <!-- 右侧：匹配结果卡片（弹性填充剩余空间）                            -->
     <!-- ================================================================ -->
     <main class="main-content">
 
         <!-- ---------- 左侧列表区 ---------- -->
         <aside class="left-panel">
+            <!-- 面板标题行 -->
             <div class="panel-header">
                 <span class="panel-icon">📂</span>
                 <span class="panel-title">数据列表</span>
             </div>
+            <!-- 可滚动列表容器，由 render.js 的 renderList() 动态填充 -->
             <div id="item-list" class="scroll-list">
                 <!-- JS 动态渲染 -->
             </div>
+            <!-- 底部计数栏，显示当前列表总条数 -->
             <div id="list-count" class="panel-footer">共 0 条</div>
         </aside>
 
         <!-- ---------- 右侧卡片区 ---------- -->
         <section class="right-panel">
-            <!-- 选中源信息 -->
+            <!-- 选中源信息条：初始隐藏，选中列表项后由 render.js 显示 -->
             <div class="source-info" id="source-info" style="display:none;">
                 <span class="source-indicator">已选中</span>
                 <span id="source-title" class="source-name"></span>
                 <span id="source-sub" class="source-meta"></span>
             </div>
 
-            <!-- 参数配置面板（v2 新增，JS 动态渲染） -->
+            <!-- 参数配置概览面板：匹配完成后由 render.js 的 renderConfigPanel() 动态填充 -->
             <div id="config-panel" class="config-panel"></div>
 
+            <!-- 匹配结果标题行 -->
             <div class="cards-header">
                 <span class="panel-icon">🔍</span>
                 <span class="panel-title">匹配结果</span>
             </div>
+            <!-- 匹配卡片容器：由 render.js 的 renderCards() 动态填充 -->
             <div id="match-cards" class="cards-grid">
                 <!-- JS 动态渲染 -->
             </div>
@@ -71,10 +85,17 @@
     </main>
 
     <!-- ================================================================ -->
-    <!-- 配置参数模态框（⚙ 参数设置）                                  -->
+    <!-- 配置参数模态框（⚙ 参数设置）                                    -->
+    <!-- 点击顶栏齿轮按钮弹出，包含：                                    -->
+    <!--   1. 权重调整策略切换（自由 / 联动）                            -->
+    <!--   2. 各维度权重滑块（由 render.js 根据 /api/dimensions 动态生成） -->
+    <!--   3. 权重合计提示条                                              -->
+    <!--   4. TopN 返回条数控件                                           -->
+    <!--   5. 维度私有参数控件（如 text_max_length，动态生成）             -->
     <!-- ================================================================ -->
     <div id="config-overlay" class="config-overlay" style="display:none;">
         <div class="config-modal">
+            <!-- 模态框头部：标题 + 关闭按钮 -->
             <div class="config-modal-header">
                 <span class="config-modal-title">⚙ 匹配参数设置</span>
                 <button id="config-close-x" class="config-close-x" title="关闭">&times;</button>
@@ -84,26 +105,29 @@
                 <!-- 权重调整策略切换 -->
                 <div class="config-section">
                     <div class="config-label">权重调整策略</div>
+                    <!-- 两个策略按钮：自由调整（保存时缩放） / 联动调整（拖动时实时缩放） -->
                     <div class="strategy-switch" id="strategy-switch">
                         <button class="strategy-btn active" data-strategy="free">策略1：自由调整（保存时自动缩放至100%）</button>
                         <button class="strategy-btn" data-strategy="linked">策略2：联动调整（改一自动等比例缩放其他）</button>
                     </div>
+                    <!-- 策略说明文字，由 render.js 的 _updateStrategyHint() 动态更新 -->
                     <div class="config-hint" id="strategy-hint">当前：自由调整，保存时若权重之和≠100% 将自动等比例缩放。</div>
                 </div>
 
                 <!-- 权重滑块容器（v3：动态生成，由 render.js 填充） -->
+                <!-- 打开模态框时，render.js 的 openConfigModal() 会根据维度注册表动态生成滑块 HTML -->
                 <div id="config-weight-sliders">
                     <!-- JS 根据 /api/dimensions 动态生成各维度滑块 -->
                 </div>
 
-                <!-- 权重和提示 -->
+                <!-- 权重和提示：显示当前所有维度权重合计，以及状态（正常/警告） -->
                 <div class="config-weight-sum" id="weight-sum-bar">
                     <span>权重合计：</span>
                     <span class="weight-sum-val" id="weight-sum-val">100.0%</span>
                     <span class="weight-sum-status" id="weight-sum-status">✓ 正常</span>
                 </div>
 
-                <!-- 返回条数 TopN -->
+                <!-- 返回条数 TopN：滑块 + 数字输入框双向联动 -->
                 <div class="config-section">
                     <div class="config-label">返回匹配条数（top_n）</div>
                     <div class="config-input-row">
@@ -113,11 +137,13 @@
                 </div>
 
                 <!-- 维度私有参数容器（v3：动态生成，由 render.js 根据维度 params 填充） -->
+                <!-- 如 text_max_length（文本匹配的最大字符截取长度）等维度特有参数 -->
                 <div id="config-dim-params">
                     <!-- JS 根据 /api/dimensions 动态生成 text_max_length 等参数控件 -->
                 </div>
             </div>
 
+            <!-- 模态框底部操作栏：恢复默认 | 取消 + 保存 -->
             <div class="config-modal-footer">
                 <button id="btn-config-reset" class="config-btn config-btn-secondary">恢复默认</button>
                 <div class="config-footer-right">
@@ -130,6 +156,9 @@
 
     <!-- ================================================================ -->
     <!-- 添加匹配维度模态框                                                   -->
+    <!-- 点击配置模态框中的"➕ 添加匹配维度"按钮弹出                      -->
+    <!-- 包含：维度名称、匹配方法、能力侧字段（多选）、机会侧字段（多选）、 -->
+    <!-- 图标、关注角度说明、方法特定参数等表单项                         -->
     <!-- ================================================================ -->
     <div id="add-dim-overlay" class="config-overlay" style="display:none;">
         <div class="config-modal" style="max-width:540px;">
@@ -138,17 +167,19 @@
                 <button id="add-dim-close-x" class="config-close-x" title="关闭">&times;</button>
             </div>
             <div class="config-modal-body" id="add-dim-body">
+                <!-- 维度名称：必填文本输入 -->
                 <div class="config-section">
                     <div class="config-label">维度名称 *</div>
                     <input type="text" id="add-dim-label" class="config-text-input" placeholder="如：投资匹配">
                 </div>
+                <!-- 匹配方法：下拉选择（选项由 add_dimension.js 根据后端数据动态填充） -->
                 <div class="config-section">
                     <div class="config-label">匹配方法 *</div>
                     <select id="add-dim-method" class="config-select">
                         <option value="">-- 请选择 --</option>
                     </select>
                 </div>
-                <!-- 能力侧字段（多选） -->
+                <!-- 能力侧字段（多选面板）：由 add_dimension.js 动态生成 checkbox 列表 -->
                 <div class="config-section">
                     <div class="config-label">
                         能力侧字段 *
@@ -158,7 +189,7 @@
                         <!-- JS 动态填充 checkbox 列表 -->
                     </div>
                 </div>
-                <!-- 机会侧字段（多选） -->
+                <!-- 机会侧字段（多选面板）：由 add_dimension.js 动态生成 checkbox 列表 -->
                 <div class="config-section">
                     <div class="config-label">
                         机会侧字段 *
@@ -168,10 +199,23 @@
                         <!-- JS 动态填充 checkbox 列表 -->
                     </div>
                 </div>
+                <!-- 维度图标（可选）：Emoji 图标，留空使用默认值 -->
                 <div class="config-section">
                     <div class="config-label">图标（Emoji，可选）</div>
                     <input type="text" id="add-dim-icon" class="config-text-input" placeholder="如：🔍（留空则使用默认值）">
                 </div>
+                <!-- 关注角度说明：LLM 解释时告诉模型该维度重点关注什么 -->
+                <div class="config-section">
+                    <div class="config-label">
+                        关注角度说明（聚焦描述）
+                        <span class="config-hint" style="font-size:11px;color:#94a3b8;font-weight:400;margin-left:4px;">
+                            LLM 解释时告诉模型该维度重点关注什么
+                        </span>
+                    </div>
+                    <textarea id="add-dim-focus" class="config-text-input" rows="2"
+                        placeholder="如：关注场景能力所属产业领域与场景机会欢迎合作方向之间的关联度。"></textarea>
+                </div>
+                <!-- 方法特定参数容器：选择匹配方法后，由 add_dimension.js 动态生成对应参数控件 -->
                 <div class="config-section" id="add-dim-method-params">
                     <!-- 方法特定参数动态生成 -->
                 </div>
@@ -185,6 +229,13 @@
 
     <!-- ================================================================ -->
     <!-- JS 模块引用（按依赖顺序加载）                                    -->
+    <!-- 加载顺序说明：                                                    -->
+    <!--   1. state.js  —— 状态管理模块（无依赖，最先加载）                -->
+    <!--   2. api.js    —— API 通信模块（依赖 state.js 读取模式等状态）    -->
+    <!--   3. render.js —— DOM 渲染模块（依赖 state.js + api.js）          -->
+    <!--   4. add_dimension.js —— 添加维度交互模块（依赖 state.js + api.js + render.js） -->
+    <!--   5. main.js   —— 主入口模块（依赖以上所有模块，最后加载）         -->
+    <!-- 项目采用原生 JS 无打包工具，各模块通过全局变量进行跨文件通信。      -->
     <!-- ================================================================ -->
     <script src="/js/state.js"></script>
     <script src="/js/api.js"></script>

@@ -1,53 +1,59 @@
 # 场景机会与能力智能匹配 Demo
 
-基于**多维加权模型**的场景能力与场景机会自动匹配系统。支持双向匹配（能力→机会 / 机会→能力），匹配维度可动态增删，前端展示完整的匹配过程明细。
+基于**多维加权模型**的场景能力与场景机会自动匹配系统。支持双向匹配（能力→机会 / 机会→能力），匹配维度和匹配方法均可动态增删，支持 LLM 驱动的匹配解释（SSE 流式输出）。
 
 ## 项目概述
 
 - **数据源**：后台数据中的两张 Excel 表（场景能力 406 条、场景机会 1186 条）
-- **后端**：Python Flask + 模块化 matcher 包
-- **前端**：纯 HTML/CSS/JS，拆分为 state / api / render / main / add_dimension 五个模块
+- **后端**：Python Flask + 模块化 matcher 包（含 7 个子模块）
+- **前端**：纯 HTML/CSS/JS，拆分为 state / api / render / main / add_dimension 五个 IIFE 模块
 - **匹配算法**：多维加权模型——每个维度独立定义字段、算法、权重，综合评分 = Σ(维度得分 × 权重)
+- **LLM 解释**：内置大模型解释功能，对匹配结果生成可读分析，支持 SSE 流式输出 + 内存缓存
 
 ## 技术栈
 
 | 层 | 技术 |
 |---|---|
-| 后端框架 | Flask (Python) |
+| 后端框架 | Flask (Python 3.10) |
 | 数据读取 | pandas + openpyxl |
-| 前端 | HTML5 + CSS3 + Vanilla JS (ES6) |
-| 匹配算法 | 精确子串+大类归一化 / 中文 2-gram Jaccard 相似度 |
-| 配置持久化 | JSON 文件（dimensions.json + config.json） |
+| 语义向量 | sentence-transformers + PyTorch (CPU) |
+| LLM 调用 | requests + SSE (OpenAI 兼容接口) |
+| 前端 | HTML5 + CSS3 + Vanilla JS (ES6 IIFE 模块) |
+| 匹配算法 | 精确子串+大类归一化 / 中文 2-gram Jaccard / 语义向量余弦相似度 |
+| 配置持久化 | JSON 文件（dimensions.json + config.json + field_mapping.json） |
 
 ## 项目结构
 
 ```
 scenedemo/
-├── app.py                      # Flask 应用入口，路由定义
+├── app.py                      # Flask 应用入口，11 个 API 端点 + CORS
 ├── requirements.txt            # Python 依赖
-├── start.bat                   # 一键启动脚本 (Windows)
+├── start.bat                   # 一键启动脚本 (Windows) + 环境检查
 ├── matcher/                    # 匹配引擎核心包
 │   ├── __init__.py             # 包入口，统一导出所有公共接口
-│   ├── data_loader.py          # Excel 数据加载与清洗
-│   ├── normalizer.py           # 领域归一化映射（领域→大类）
-│   ├── dimensions.py           # 匹配维度注册表（文件持久化版）
-│   └── engine.py               # 匹配引擎（遍历注册表、加权求和）
+│   ├── data_loader.py          # Excel 数据加载与 _safe_str 清洗
+│   ├── normalizer.py           # 领域归一化映射（13 条领域→大类规则）
+│   ├── dimensions.py           # 匹配维度注册表 + METHOD_REGISTRY 工厂（文件持久化）
+│   ├── engine.py               # 匹配引擎：遍历注册表、加权求和、领域兜底策略
+│   ├── vector_tool.py          # SentenceTransformer 单例 + 文本→向量缓存
+│   └── llm_explainer.py        # LLM 解释生成（SSE 流式 + 内存缓存 + 提示词工程）
 ├── static/                     # 前端静态文件
-│   ├── index.html              # 主页面
+│   ├── index.html              # 主页面骨架（顶栏 + 双栏布局 + 两个模态框）
 │   ├── css/
-│   │   ├── style.css           # 主样式表
-│   │   └── add_dimension.css   # 添加维度模态框样式
+│   │   ├── style.css           # 主样式表（CSS 变量体系 + 卡片/进度条/模态框）
+│   │   └── add_dimension.css   # 添加维度模态框补充样式
 │   └── js/
-│       ├── state.js            # 全局状态管理（IIFE 模块）
-│       ├── api.js              # API 请求层（封装所有 fetch）
-│       ├── render.js           # DOM 渲染模块（列表/卡片/配置面板）
-│       ├── main.js             # 主流程编排与事件绑定
-│       └── add_dimension.js    # 添加维度模态框交互逻辑
+│       ├── state.js            # 全局状态管理（IIFE 模块：模式/选中项/配置）
+│       ├── api.js              # API 请求层（11 个 fetch 封装 + SSE 流式解析）
+│       ├── render.js           # DOM 渲染模块（列表/卡片/进度条/配置面板/LLM 解释区域）
+│       ├── main.js             # 主流程编排与事件委托
+│       └── add_dimension.js    # 添加维度模态框交互（字段多选/方法切换/表单验证）
 ├── 后台数据/                    # 源数据 + 持久化配置
 │   ├── 场景能力数据列表.xlsx
 │   ├── 场景机会数据列表.xlsx
 │   ├── dimensions.json         # 匹配维度定义（运行时修改）
-│   └── config.json             # 匹配参数配置（运行时修改）
+│   ├── config.json             # 匹配参数配置（运行时修改）
+│   └── field_mapping.json      # 字段映射（字段名→中文标签）
 ├── README.md                   # 项目文档（本文件）
 └── CHANGELOG.md                # 变更日志
 ```
@@ -58,12 +64,16 @@ scenedemo/
 
 - Python 3.10+（Conda 管理虚拟环境）
 - conda
+- 网络（首次启动需下载 sentence-transformers 模型，后续离线运行）
 
 ### 安装与运行
 
 #### 方式一：一键启动（推荐）
 
-双击 `start.bat`，脚本会自动检查/创建 conda 虚拟环境 `scenedemo` 并安装依赖后启动。
+双击 `start.bat`，脚本会自动：
+- 检查/创建 conda 虚拟环境 `scenedemo`
+- 安装 PyTorch（CPU 版）+ 其他依赖
+- 启动 Flask 服务
 
 #### 方式二：手动启动
 
@@ -76,7 +86,7 @@ conda activate scenedemo
 conda install pytorch cpuonly -c pytorch -y
 
 # 安装其他依赖
-pip install flask sentence-transformers
+pip install flask sentence-transformers pandas openpyxl
 
 # 启动服务
 python app.py
@@ -102,6 +112,8 @@ total_score = Σ (dim_score × dim_weight)  对所有注册的维度求和
 
 ### 匹配方法说明
 
+系统提供 3 种匹配方法，通过 `METHOD_REGISTRY` 注册表管理，新方法可插拔添加：
+
 #### string_match（精确子串 + 大类归一化）
 
 | 匹配方式 | 得分 | 说明 |
@@ -110,6 +122,8 @@ total_score = Σ (dim_score × dim_weight)  对所有注册的维度求和
 | 大类近似 | 0.5 | 归一化后属于同一大类（通过 `normalizer.py` 映射表） |
 | 未命中 | 0.0 | 无匹配关系 |
 
+适用场景：领域、区域等**结构化分类字段**的匹配。
+
 #### bigram（中文 2-gram Jaccard 相似度）
 
 ```
@@ -117,8 +131,19 @@ Jaccard(A, B) = |A ∩ B| / |A ∪ B|
 ```
 
 - 提取两侧文本的中文 bigram 集合
-- 截取前 N 字（可配置，默认 300）避免长文本稀释相似度
+- 截取前 N 字（可配置 `text_max_length`，默认 300）避免长文本稀释相似度
 - 返回重叠 bigram 列表供前端展示
+
+适用场景：概述文本、客户描述等**非结构化长文本**的匹配。
+
+#### vector_semantic（语义向量余弦相似度）
+
+- 使用 `sentence-transformers` 模型（默认 `paraphrase-multilingual-MiniLM-L12-v2`）将文本转为 384 维语义向量
+- 计算余弦相似度作为匹配得分（范围 0~1）
+- 文本→向量结果缓存在进程内存中，避免重复计算
+- 模型采用懒加载 + 单例模式，首次使用时加载
+
+适用场景：需要**理解语义**而非字面匹配的场景（如"智慧城市" vs "数字治理"）。
 
 ## API 接口
 
@@ -270,11 +295,76 @@ Jaccard(A, B) = |A ∩ B| / |A ∪ B|
 
 **返回格式：** 与 `GET /api/match/ability/<id>` 相同，只是 source 为机会信息，target 为能力信息。
 
-额外逻辑：当领域（domain）维度得分为 0 时，会自动尝试用机会的 domain 字段去匹配能力的 target_customer（意向对接客户）字段作为兜底。
+**领域兜底匹配策略：** 当领域（domain）维度得分为 0 时，引擎会自动尝试用机会的 domain 字段去匹配能力的 target_customer（意向对接客户）字段作为兜底。这解决了某些场景机会领域的表述方式与能力领域的表述方式不同导致的误漏匹配。
 
 ---
 
-### 3. 维度管理接口
+### 3. 匹配解释接口（LLM）
+
+#### `POST /api/match/explain`
+
+为指定的能力-机会匹配对调用 LLM 生成可读的分析解释，通过 **SSE (Server-Sent Events) 流式** 实时返回。
+
+**请求体 (JSON)：**
+```json
+{
+  "ability_id": 1,
+  "opp_id": 5,
+  "match_index": 0,
+  "mode": "ability",
+  "force_refresh": false
+}
+```
+
+**请求体字段：**
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `ability_id` | int | 是 | 场景能力 ID |
+| `opp_id` | int | 是 | 场景机会 ID |
+| `match_index` | int | 否 | 匹配结果在列表中的位置（0-based），默认 0 |
+| `mode` | string | 否 | 匹配方向：`"ability"`（能力→机会）或 `"opportunity"`（机会→能力），默认 `"ability"` |
+| `force_refresh` | bool | 否 | 是否强制重新生成（清除缓存），默认 `false` |
+
+**返回格式（SSE 流）：**
+```
+data: {"chunk": "### 1. 优势分析"}
+data: {"chunk": "\n\n- **领域匹配**：..."}
+data: {"chunk": "\n### 2. 改进建议"}
+data: {"chunk": "\n- 可在..."}
+data: {"done": true, "cached": false}
+```
+
+每条 SSE 消息包含一个 `chunk`（部分文本片段），前端逐 token 渲染。
+最后一条消息含 `done: true` 标记流结束，`cached` 表示是否命中缓存。
+
+**LLM 配置：** 通过 `后台数据/config.json` 的 `llm` 字段管理：
+```json
+{
+  "llm": {
+    "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+    "api_key": "sk-or-v1-...",
+    "model": "deepseek/deepseek-chat-v3-0324:free",
+    "proxy": ""
+  }
+}
+```
+
+支持的免费模型：`deepseek/deepseek-chat-v3-0324:free`（推荐，中文优秀）、`google/gemma-3-4b-it:free`、`mistralai/mistral-7b-instruct:free` 等。
+
+**缓存策略：**
+- 缓存 key = `(ability_id, opp_id, dims_fingerprint)`
+- 命中缓存时模拟流式逐字返回，避免重复调用 LLM
+- `force_refresh=true` 时清除缓存并重新生成
+- 缓存仅在进程生命周期内有效，重启后清空
+
+**使用前提：**
+- `config.json` 中 `llm.api_key` 不为空（需自行注册 OpenRouter 并获取免费 API Key）
+- 国内用户可能需要配置 `llm.proxy`（如 `http://127.0.0.1:7897`）
+
+---
+
+### 4. 维度管理接口
 
 #### `GET /api/dimensions`
 
@@ -344,7 +434,7 @@ Jaccard(A, B) = |A ∩ B| / |A ∪ B|
 
 #### `POST /api/dimensions`
 
-添加新匹配维度。
+添加新匹配维度（支持 `string_match`、`bigram`、`vector_semantic` 三种方法）。
 
 **请求头：** `Content-Type: application/json`
 
@@ -367,12 +457,10 @@ Jaccard(A, B) = |A ∩ B| / |A ∪ B|
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `label` | string | 是 | 维度显示名称，如"投资匹配" |
-| `method` | string | 是 | 匹配方法，可选 `string_match` 或 `bigram` |
-| `ability_fields` | array | 否 | 能力侧字段名列表，如 `["effect"]`。默认 `[]` |
-| `opportunity_fields` | array | 否 | 机会侧字段名列表，如 `["investment"]`。默认 `[]` |
+| `method` | string | 是 | 匹配方法，可选 `string_match` / `bigram` / `vector_semantic` |
+| `ability_fields` | array | 否 | 能力侧字段名列表。默认 `[]` |
+| `opportunity_fields` | array | 否 | 机会侧字段名列表。默认 `[]` |
 | `method_labels` | object | 否 | 仅 `string_match` 方法使用，定义详情中的中文标签 |
-| `method_labels.ability` | string | 否 | 能力侧字段的中文标签，如"能力效果"。默认"能力值" |
-| `method_labels.opportunity` | string | 否 | 机会侧字段的中文标签，如"投资金额"。默认"机会值" |
 | `icon` | string | 否 | 自定义图标 emoji，默认由方法决定 |
 | `color` | string | 否 | 自定义颜色 HEX 值，默认由方法决定 |
 
@@ -380,7 +468,7 @@ Jaccard(A, B) = |A ∩ B| / |A ∪ B|
 - `id`：自动分配 `dim_N` 格式
 - `weight_key`：自动生成 `{id}_weight` 格式
 - `default_weight`：固定为 `0.0`（用户需在配置面板手动调整）
-- `detail_type`、`icon`、`color`、`params`：由匹配方法决定默认值
+- `detail_type`、`icon`、`color`、`params`：由匹配方法 `METHOD_REGISTRY` 决定默认值
 
 **成功返回 (200)：**
 ```json
@@ -456,26 +544,23 @@ Jaccard(A, B) = |A ∩ B| / |A ∪ B|
   "bigram": {
     "default_detail_type": "bigram",
     "default_params": {
-      "max_length": {
-        "default": 300,
-        "label": "文本截取长度",
-        "hint": "文本匹配时截取前 N 个中文字符，避免超长文本稀释相似度。",
-        "type": "int",
-        "min": 50,
-        "max": 2000,
-        "step": 10,
-        "slider_max": 2000
-      }
+      "max_length": { "default": 300, "label": "文本截取长度", ... }
     },
     "default_icon": "📐",
     "default_color": "#22C55E"
+  },
+  "vector_semantic": {
+    "default_detail_type": "vector_stat",
+    "default_params": {},
+    "default_icon": "🧠",
+    "default_color": "#8B5CF6"
   }
 }
 ```
 
 ---
 
-### 4. 字段列表接口
+### 5. 字段列表接口
 
 #### `GET /api/fields`
 
@@ -491,11 +576,11 @@ Jaccard(A, B) = |A ∩ B| / |A ∪ B|
 }
 ```
 
-**说明：** 如需新增可选字段，需同步修改 `app.py` 中的此接口和 `data_loader.py` 中的字段映射。
+**说明：** 如需新增可选字段，需同步修改 `app.py` 中此接口的返回值 + `data_loader.py` 中的字段映射。
 
 ---
 
-### 5. 参数配置接口
+### 6. 参数配置接口
 
 #### `GET /api/config`
 
@@ -514,7 +599,7 @@ Jaccard(A, B) = |A ∩ B| / |A ∪ B|
 }
 ```
 
-说明：权重 key 由维度注册表动态决定，`top_n` 和维度私有参数（如 `text_max_length`）始终存在。
+说明：权重 key 由维度注册表动态决定（如 `domain_weight`、`text_weight`），`top_n` 和维度私有参数（如 `text_max_length`）始终存在。
 
 #### `POST /api/config`
 
@@ -564,25 +649,29 @@ Jaccard(A, B) = |A ∩ B| / |A ∪ B|
 - **左侧列表**：按序号展示全部条目，点击选中
 - **右侧匹配卡片**：
   - 📋 匹配字段对照表（左右两栏对照）
-  - 各维度匹配详情（精确/大类/未命中 + 上下文，或 bigram 统计 + 重叠关键词）
-  - 📊 多色进度条（每个维度一个色块，宽度 = × 权重后的贡献）
+  - 各维度匹配详情（精确/大类/未命中 + 上下文，或 bigram 统计 + 重叠关键词，或语义相似度统计）
+  - 📊 多色进度条（每个维度一个色块，宽度 = 得分 × 权重）
+  - 🤖 LLM 解释按钮：点击展开 AI 生成的匹配分析（SSE 流式渲染）
 - **配置面板**（⚙️ 按钮打开）：
   - 动态权重滑块（0~100%，0.1% 精度）
   - 自由 / 联动 两种调整策略
-  - 维度私有参数调整
-  - ➕ 添加匹配维度 / 🗑 删除维度
+  - 维度私有参数调整（如 `text_max_length`）
+  - ➕ 添加匹配维度（支持三种匹配方法：string_match / bigram / vector_semantic）
+  - 🗑 删除维度（不影响种子维度文件）
+- **主题切换**：支持亮色/暗色/跟随系统 3 种主题
 
 ### 交互
 
 - 点击左侧列表项 → 自动发起匹配请求 → 右侧展示 Top N 结果
 - 切换模式按钮 → 刷新列表 → 清空匹配结果
 - 修改配置并保存 → 自动重新匹配
+- 点击「AI 分析」按钮 → SSE 流式渲染 LLM 解释
 
 ---
 
 ## 领域归一化
 
-`matcher/normalizer.py` 维护领域→大类映射表，处理跨表命名不一致：
+`matcher/normalizer.py` 维护 13 条领域→大类映射规则，处理跨表命名不一致：
 
 | 原始值 | 归一化 |
 |---|---|
@@ -590,10 +679,13 @@ Jaccard(A, B) = |A ∩ B| / |A ∪ B|
 | 智能制造装备 / 机器人 | 智能制造 |
 | 智能网联新能源汽车 | 新能源汽车 |
 | 产业转型升级 / 六大新兴产业集群 / 其他 | 综合 |
+| 软件与信息服务（软件，互联网） | 软件与信息服务 |
+| 新型电子信息 | 电子信息 |
+| ... | ... |
 
 ## 架构设计要点
 
-### 维度注册表模式
+### 维度注册表模式（可插拔架构）
 
 匹配维度不是硬编码在引擎中，而是由 `dimensions.py` 集中定义：
 
@@ -606,14 +698,35 @@ compute(a_vals, o_vals, params) → (score, detail)
 ```
 
 新增维度只需：
-1. 在 `METHOD_REGISTRY` 中注册匹配方法（如已存在则跳过）
+1. 在 `METHOD_REGISTRY` 中注册匹配方法（已经内置 3 种，如已存在则跳过）
 2. 前端通过「添加匹配维度」UI 操作，自动调用 `POST /api/dimensions`
-3. 引擎无需任何改动
+3. 引擎 `engine.py` 无需任何改动——遍历注册表即可处理所有维度
+
+### 匹配方法工厂模式
+
+`METHOD_REGISTRY` 为每种方法定义工厂函数，根据维度配置生成 `compute()` 闭包：
+
+```
+METHOD_REGISTRY = {
+  "string_match":    → _make_string_match_adapter()    → 精确子串 + 归一化
+  "bigram":          → _make_bigram_adapter()          → 中文 2-gram Jaccard
+  "vector_semantic": → _make_vector_adapter()          → 语义向量余弦相似度
+}
+```
+
+### 语义向量工具（进程级单例）
+
+`matcher/vector_tool.py` 实现：
+- **懒加载单例**：SentenceTransformer 模型首次使用时加载，后续直接复用
+- **文本→向量缓存**：相同文本避免重复编码
+- **预热机制**：启动时调用 `pre_warm_cache()` 预计算所有文本向量
+- **离线优先**：通过 `local_files_only=True` 优先使用本地已下载的模型
 
 ### 配置持久化
 
 - `dimensions.json`：维度定义（ID、方法、字段映射等），增删时自动保存
-- `config.json`：匹配参数（权重、TopN、私有参数），每次 `/api/config` POST 保存
+- `config.json`：匹配参数（权重、TopN、私有参数 + LLM 配置），每次 `/api/config` POST 保存
+- `field_mapping.json`：字段名→中文标签映射，通过 API 读写
 
 ### 前/后端数据流
 
@@ -625,10 +738,22 @@ compute(a_vals, o_vals, params) → (score, detail)
         → engine.py _compute_dimension_scores()
           → 遍历 DIMENSIONS
             → dim['compute'](a_vals, o_vals, params)
-              → _score_string_match / _score_text
+              → _score_string_match / _score_text / _score_vector
         → _build_match_response() 组装响应
-      → render.js renderCards() 渲染卡片
+      → render.js renderCards() 渲染匹配卡片
+
+用户点击「AI 分析」
+  → main.js 事件委托
+    → api.js 调用 fetchMatchExplanation(...)
+      → app.py /api/match/explain (POST)
+        → 检查内存缓存
+        → 未命中 → llm_explainer.generate_explanation_stream()
+          → 调用 OpenRouter API (SSE)
+        → 命中 → 模拟流式逐字返回
+      → render.js renderExplanation() SSE 逐 token 渲染
 ```
+
+---
 
 ## License
 
