@@ -4,8 +4,8 @@
 #   Step 1 - conda（PyTorch，自带 VC++ 运行时）:
 #     conda install pytorch cpuonly -c pytorch -y
 #
-#   Step 2 - pip（Flask + 语义向量 + Excel 读取）:
-#     pip install flask sentence-transformers pandas openpyxl
+#   Step 2 - pip（Flask + 语义向量 + Excel 读取 + LLM 调用）:
+#     pip install flask sentence-transformers pandas openpyxl requests numpy
 #
 # 或直接双击 start.bat 一键完成。
 # ============================================================
@@ -13,3 +13,5 @@ flask
 sentence-transformers
 pandas
 openpyxl
+requests
+numpy

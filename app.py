@@ -166,25 +166,48 @@ print('  缓存预热完成，准备接受请求')
 print('=' * 60)
 
 # ============================================================================
-# LLM 配置加载（从 config.json 的 llm 字段读取）
+# LLM 配置加载（从独立 llm_config.json 读取）
 # ============================================================================
-# LLM 配置存储在 config.json 的顶层 "llm" 字段中，启动时读取并缓存到
+# LLM 配置存储在 后台数据/llm_config.json 中，启动时读取并缓存到
 # LLM_CONFIG 全局字典。后续 /api/match/explain 使用这些配置调用 LLM API。
+# 这样 /api/config 保存匹配参数时不会覆盖 LLM 密钥、模型和代理设置。
 # 支持通过 proxy 字段配置 HTTP 代理（用于本地开发环境）。
-LLM_CONFIG = {}
+DEFAULT_LLM_CONFIG = {
+    'endpoint': 'https://openrouter.ai/api/v1/chat/completions',
+    'api_key': '',
+    'model': 'deepseek/deepseek-chat-v3-0324:free',
+    'proxy': '',
+}
+LLM_CONFIG = dict(DEFAULT_LLM_CONFIG)
 try:
-    config_path = os.path.join(DATA_DIR, 'config.json')
-    if os.path.exists(config_path):
-        with open(config_path, 'r', encoding='utf-8') as f:
+    llm_config_path = os.path.join(DATA_DIR, 'llm_config.json')
+    legacy_config_path = os.path.join(DATA_DIR, 'config.json')
+
+    if os.path.exists(llm_config_path):
+        with open(llm_config_path, 'r', encoding='utf-8') as f:
+            cfg = json.load(f)
+            LLM_CONFIG.update({
+                'endpoint': cfg.get('endpoint', DEFAULT_LLM_CONFIG['endpoint']),
+                'api_key': cfg.get('api_key', DEFAULT_LLM_CONFIG['api_key']),
+                'model': cfg.get('model', DEFAULT_LLM_CONFIG['model']),
+                'proxy': cfg.get('proxy', DEFAULT_LLM_CONFIG['proxy']),
+            })
+    elif os.path.exists(legacy_config_path):
+        # 兼容旧版本：如果用户还没有拆分配置，仍尝试读取 config.json.llm。
+        with open(legacy_config_path, 'r', encoding='utf-8') as f:
             cfg = json.load(f)
             llm_cfg = cfg.get('llm', {})
-            LLM_CONFIG = {
-                'endpoint': llm_cfg.get('endpoint', 'https://openrouter.ai/api/v1/chat/completions'),
-                'api_key': llm_cfg.get('api_key', ''),
-                'model': llm_cfg.get('model', 'deepseek/deepseek-chat-v3-0324:free'),
-                'proxy': llm_cfg.get('proxy', 'http://127.0.0.1:7897'),
-            }
-    print(f'[llm] 配置已加载: endpoint={LLM_CONFIG["endpoint"]}, model={LLM_CONFIG["model"]}, proxy={LLM_CONFIG["proxy"]}')
+            if llm_cfg:
+                LLM_CONFIG.update({
+                    'endpoint': llm_cfg.get('endpoint', DEFAULT_LLM_CONFIG['endpoint']),
+                    'api_key': llm_cfg.get('api_key', DEFAULT_LLM_CONFIG['api_key']),
+                    'model': llm_cfg.get('model', DEFAULT_LLM_CONFIG['model']),
+                    'proxy': llm_cfg.get('proxy', DEFAULT_LLM_CONFIG['proxy']),
+                })
+                print('[llm] 已从旧版 config.json.llm 加载配置，建议迁移到 后台数据/llm_config.json')
+
+    has_key = 'yes' if LLM_CONFIG.get('api_key') else 'no'
+    print(f'[llm] 配置已加载: endpoint={LLM_CONFIG["endpoint"]}, model={LLM_CONFIG["model"]}, proxy={LLM_CONFIG["proxy"]}, api_key={has_key}')
 except Exception as e:
     print(f'[llm] 加载配置失败: {e}，使用默认值')
 

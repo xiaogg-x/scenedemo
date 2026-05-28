@@ -20,7 +20,7 @@
 | LLM 调用 | requests + SSE (OpenAI 兼容接口) |
 | 前端 | HTML5 + CSS3 + Vanilla JS (ES6 IIFE 模块) |
 | 匹配算法 | 精确子串+大类归一化 / 中文 2-gram Jaccard / 语义向量余弦相似度 |
-| 配置持久化 | JSON 文件（dimensions.json + config.json + field_mapping.json） |
+| 配置持久化 | JSON 文件（dimensions.json + config.json + llm_config.json） |
 
 ## 项目结构
 
@@ -53,7 +53,8 @@ scenedemo/
 │   ├── 场景机会数据列表.xlsx
 │   ├── dimensions.json         # 匹配维度定义（运行时修改）
 │   ├── config.json             # 匹配参数配置（运行时修改）
-│   └── field_mapping.json      # 字段映射（字段名→中文标签）
+│   ├── llm_config.json         # LLM 调用配置（本地密钥文件，不提交）
+│   └── llm_config.example.json # LLM 配置示例（不含密钥）
 ├── README.md                   # 项目文档（本文件）
 └── CHANGELOG.md                # 变更日志
 ```
@@ -86,7 +87,7 @@ conda activate scenedemo
 conda install pytorch cpuonly -c pytorch -y
 
 # 安装其他依赖
-pip install flask sentence-transformers pandas openpyxl
+pip install flask sentence-transformers pandas openpyxl requests numpy
 
 # 启动服务
 python app.py
@@ -102,13 +103,14 @@ python app.py
 total_score = Σ (dim_score × dim_weight)  对所有注册的维度求和
 ```
 
-维度由 `后台数据/dimensions.json` 定义，默认 3 个维度：
+维度由 `后台数据/dimensions.json` 定义。当前示例配置包含 4 个维度：
 
-| 维度 | 方法 | 能力侧字段 | 机会侧字段 | 默认权重 |
+| 维度 | 方法 | 能力侧字段 | 机会侧字段 | 当前权重 |
 |------|------|-----------|-----------|---------|
-| 领域匹配 | string_match | domain | welcome | 0.4 |
-| 文本匹配 | bigram | overview, target_customer | overview, welcome | 0.3 |
-| 区域匹配 | string_match | district | area | 0.3 |
+| 领域匹配 | string_match | domain | welcome | 0.377 |
+| 文本匹配 | bigram | overview, target_customer | overview, welcome | 0.128 |
+| 区域匹配 | string_match | district | area | 0.089 |
+| 新增匹配 | vector_semantic | district, overview | area, overview | 0.406 |
 
 ### 匹配方法说明
 
@@ -338,15 +340,13 @@ data: {"done": true, "cached": false}
 每条 SSE 消息包含一个 `chunk`（部分文本片段），前端逐 token 渲染。
 最后一条消息含 `done: true` 标记流结束，`cached` 表示是否命中缓存。
 
-**LLM 配置：** 通过 `后台数据/config.json` 的 `llm` 字段管理：
+**LLM 配置：** 通过 `后台数据/llm_config.json` 管理。该文件保存本地密钥，不应提交或外传；可参考 `后台数据/llm_config.example.json` 创建：
 ```json
 {
-  "llm": {
-    "endpoint": "https://openrouter.ai/api/v1/chat/completions",
-    "api_key": "sk-or-v1-...",
-    "model": "deepseek/deepseek-chat-v3-0324:free",
-    "proxy": ""
-  }
+  "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+  "api_key": "sk-or-v1-...",
+  "model": "deepseek/deepseek-chat-v3-0324:free",
+  "proxy": ""
 }
 ```
 
@@ -359,8 +359,8 @@ data: {"done": true, "cached": false}
 - 缓存仅在进程生命周期内有效，重启后清空
 
 **使用前提：**
-- `config.json` 中 `llm.api_key` 不为空（需自行注册 OpenRouter 并获取免费 API Key）
-- 国内用户可能需要配置 `llm.proxy`（如 `http://127.0.0.1:7897`）
+- `llm_config.json` 中 `api_key` 不为空（需自行注册 OpenRouter 并获取免费 API Key）
+- 国内用户可能需要配置 `proxy`（如 `http://127.0.0.1:7897`）
 
 ---
 
@@ -725,8 +725,8 @@ METHOD_REGISTRY = {
 ### 配置持久化
 
 - `dimensions.json`：维度定义（ID、方法、字段映射等），增删时自动保存
-- `config.json`：匹配参数（权重、TopN、私有参数 + LLM 配置），每次 `/api/config` POST 保存
-- `field_mapping.json`：字段名→中文标签映射，通过 API 读写
+- `config.json`：匹配参数（权重、TopN、私有参数），每次 `/api/config` POST 保存
+- `llm_config.json`：LLM endpoint、api_key、model、proxy 等本地调用配置，不受 `/api/config` 覆盖
 
 ### 前/后端数据流
 

@@ -27,7 +27,7 @@ if exist "%CONDA_PYTHON%" (
         set PYTHON_EXE=python
     ) else (
         call conda install -n %CONDA_ENV% pytorch cpuonly -c pytorch -y
-        call %CONDA_PYTHON% -m pip install flask sentence-transformers pandas openpyxl -q
+        call %CONDA_PYTHON% -m pip install flask sentence-transformers pandas openpyxl requests numpy -q
         set PYTHON_EXE=%CONDA_PYTHON%
         echo   虚拟环境创建完成
     )
@@ -37,7 +37,7 @@ echo [2/3] 检查依赖...
 %PYTHON_EXE% -c "import flask, torch, sentence_transformers, pandas" 2>nul
 if errorlevel 1 (
     echo   [警告] 依赖缺失，正在安装...
-    %PYTHON_EXE% -m pip install flask sentence-transformers pandas openpyxl -q
+    %PYTHON_EXE% -m pip install flask sentence-transformers pandas openpyxl requests numpy -q
 )
 echo   依赖就绪
 

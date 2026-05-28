@@ -19,6 +19,7 @@ _t.txt
 
 # 运行时配置（本地持久化，不提交）
 后台数据/config.json
+后台数据/llm_config.json
 
 # 系统文件
 Thumbs.db

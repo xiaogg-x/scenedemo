@@ -1,0 +1,6 @@
+{
+  "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+  "api_key": "",
+  "model": "deepseek/deepseek-chat-v3-0324:free",
+  "proxy": ""
+}
